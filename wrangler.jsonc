@@ -6,6 +6,9 @@
   "compatibility_flags": ["nodejs_compat"],
   "upload_source_maps": true,
   "keep_vars": true,
+  "vars": {
+    "BETTER_AUTH_URL": "https://euclion.locostartt.workers.dev"
+  },
   "assets": {
     "directory": ".open-next/assets",
     "binding": "ASSETS"

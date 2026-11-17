@@ -34,7 +34,7 @@ GitHub Actions는 `main` 브랜치로의 push와 pull request에서 린트와 Cl
 1. Cloudflare 대시보드의 **Workers & Pages → D1 SQL Database**에서 이름이 `euclion`인 데이터베이스를 만듭니다. 데이터베이스의 UUID를 복사해 저장소의 `wrangler.jsonc`에 있는 `d1_databases` 항목에 `"database_id": "<복사한 UUID>"`를 추가하고 변경을 push합니다. 이 UUID는 비밀값은 아니지만 Cloudflare 계정별로 다릅니다.
 2. **Workers & Pages → Create application → Worker → Connect to Git**에서 `locostar/euclion`의 `main` 브랜치를 연결합니다. Pages 프로젝트가 이미 있다면 Pages 설정을 재사용하지 말고 Git 연결을 사용하는 Worker를 만드세요.
 3. Worker의 **Settings → Variables and Secrets**에서 다음 항목을 설정합니다.
-   - `BETTER_AUTH_URL`: 배포된 Worker의 `https://…workers.dev` 주소
+   - `BETTER_AUTH_URL`: `wrangler.jsonc`에 설정된 Worker URL (`https://euclion.locostartt.workers.dev`)
    - `BETTER_AUTH_SECRET`: 안전하게 생성한 32자 이상의 무작위 비밀값 (Secret)
    - `RESEND_API_KEY`: Resend API 키 (Secret)
    - `RESEND_FROM`: Resend에서 인증한 발신 주소
