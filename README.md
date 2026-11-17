@@ -23,7 +23,7 @@ npm run lint
 npm run build:cf
 ```
 
-GitHub Actions는 `main` 브랜치로의 push와 pull request에서 린트와 Cloudflare Worker 빌드를 실행합니다.
+`npm run build:cf`는 Wrangler 바인딩 타입을 생성한 다음 Cloudflare Worker 빌드를 실행합니다. GitHub Actions는 `main` 브랜치로의 push와 pull request에서 린트와 Cloudflare Worker 빌드를 실행합니다.
 
 ## Cloudflare에서 Git 자동 배포 설정
 
