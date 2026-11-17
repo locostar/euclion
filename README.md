@@ -40,11 +40,12 @@ GitHub Actions는 `main` 브랜치로의 push와 pull request에서 린트와 Cl
    - `RESEND_FROM`: Resend에서 인증한 발신 주소
 4. Resend에서 발신 도메인을 인증합니다. 이메일 확인과 비밀번호 재설정 메일은 이 발신 설정이 있어야 전송됩니다.
 5. Worker Builds의 빌드 설정을 다음처럼 지정합니다.
-   - **Build command:** `npm run build:cf`
-   - **Deploy command:** `npm run deploy:worker`
+   - **Build command:** `npm run build:cf && npm run db:migrate:remote`
+   - **Deploy command:** `npx wrangler deploy`
    - **Production branch:** `main`
+   - **Preview builds:** 비활성화 (운영 D1에 미리보기 빌드의 마이그레이션이 적용되지 않도록 합니다.)
 
-`deploy:worker`는 원격 D1 마이그레이션을 먼저 적용한 뒤 Worker를 배포합니다. D1을 먼저 만들고 실제 UUID를 설정해야 최초 배포부터 이 순서가 동작합니다. 이후 `main`에 push할 때마다 Cloudflare가 새 버전을 자동 빌드·배포합니다.
+빌드 단계가 원격 D1 마이그레이션을 적용하고, 이어서 Wrangler가 Worker를 배포합니다. D1을 먼저 만들고 실제 UUID를 설정해야 최초 배포부터 이 순서가 동작합니다. 이후 `main`에 push할 때마다 Cloudflare가 새 버전을 자동 빌드·배포합니다.
 
 Cloudflare 공식 가이드: [Workers Git integration](https://developers.cloudflare.com/workers/ci-cd/builds/git-integration/), [Next.js on Workers](https://developers.cloudflare.com/workers/framework-guides/web-apps/nextjs/), [D1](https://developers.cloudflare.com/d1/).
 
