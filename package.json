@@ -13,6 +13,7 @@
     "build:cf": "opennextjs-cloudflare build",
     "preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
     "deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy",
+    "deploy:worker": "wrangler d1 migrations apply euclion --remote && wrangler deploy",
     "db:generate": "drizzle-kit generate",
     "db:migrate:local": "wrangler d1 migrations apply euclion --local",
     "db:migrate:remote": "wrangler d1 migrations apply euclion --remote",

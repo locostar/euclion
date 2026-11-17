@@ -25,9 +25,32 @@ npm run build:cf
 
 GitHub Actions는 `main` 브랜치로의 push와 pull request에서 린트와 Cloudflare Worker 빌드를 실행합니다.
 
-## Cloudflare Workers + D1
+## Cloudflare에서 Git 자동 배포 설정
 
-로컬 Worker 환경에서 확인하려면 `.dev.vars.example`을 `.dev.vars`로 복사하고 Better Auth 비밀값과 Resend 계정 정보를 설정한 뒤 로컬 D1 스키마를 적용합니다.
+이 앱은 로그인·D1 데이터베이스를 사용하는 동적 Next.js 앱입니다. **Cloudflare Pages의 `pages.dev` 정적 사이트로 배포하지 않습니다.** Cloudflare Workers Builds로 GitHub 저장소를 연결하세요. `pages.dev` 주소에서 404가 표시되면 Pages 프로젝트가 이 Worker 앱을 제공하고 있지 않다는 뜻입니다. Worker의 기본 주소는 `<worker-name>.<account-subdomain>.workers.dev`이며, 필요하면 별도의 도메인을 연결할 수 있습니다.
+
+### 최초 1회 설정
+
+1. Cloudflare 대시보드의 **Workers & Pages → D1 SQL Database**에서 이름이 `euclion`인 데이터베이스를 만듭니다. 데이터베이스의 UUID를 복사해 저장소의 `wrangler.jsonc`에 있는 `d1_databases` 항목에 `"database_id": "<복사한 UUID>"`를 추가하고 변경을 push합니다. 이 UUID는 비밀값은 아니지만 Cloudflare 계정별로 다릅니다.
+2. **Workers & Pages → Create application → Worker → Connect to Git**에서 `locostar/euclion`의 `main` 브랜치를 연결합니다. Pages 프로젝트가 이미 있다면 Pages 설정을 재사용하지 말고 Git 연결을 사용하는 Worker를 만드세요.
+3. Worker의 **Settings → Variables and Secrets**에서 다음 항목을 설정합니다.
+   - `BETTER_AUTH_URL`: 배포된 Worker의 `https://…workers.dev` 주소
+   - `BETTER_AUTH_SECRET`: 안전하게 생성한 32자 이상의 무작위 비밀값 (Secret)
+   - `RESEND_API_KEY`: Resend API 키 (Secret)
+   - `RESEND_FROM`: Resend에서 인증한 발신 주소
+4. Resend에서 발신 도메인을 인증합니다. 이메일 확인과 비밀번호 재설정 메일은 이 발신 설정이 있어야 전송됩니다.
+5. Worker Builds의 빌드 설정을 다음처럼 지정합니다.
+   - **Build command:** `npm run build:cf`
+   - **Deploy command:** `npm run deploy:worker`
+   - **Production branch:** `main`
+
+`deploy:worker`는 원격 D1 마이그레이션을 먼저 적용한 뒤 Worker를 배포합니다. D1을 먼저 만들고 실제 UUID를 설정해야 최초 배포부터 이 순서가 동작합니다. 이후 `main`에 push할 때마다 Cloudflare가 새 버전을 자동 빌드·배포합니다.
+
+Cloudflare 공식 가이드: [Workers Git integration](https://developers.cloudflare.com/workers/ci-cd/builds/git-integration/), [Next.js on Workers](https://developers.cloudflare.com/workers/framework-guides/web-apps/nextjs/), [D1](https://developers.cloudflare.com/d1/).
+
+### 로컬 Worker 확인
+
+`.dev.vars.example`을 `.dev.vars`로 복사해 로컬 비밀값과 Resend 설정을 지정한 뒤 실행합니다.
 
 ```bash
 cp .dev.vars.example .dev.vars
@@ -36,14 +59,7 @@ npm run db:migrate:local
 npm run preview
 ```
 
-`.dev.vars`에는 실제 비밀값을 넣고 Git에 올리지 마세요. Resend에서 발신 도메인을 인증하고 `RESEND_FROM`을 해당 도메인 주소로 설정해야 가입 확인 이메일이 발송됩니다.
-
-Cloudflare 배포 전에는 계정에 로그인하고 D1 데이터베이스를 만들어야 합니다. `wrangler.jsonc`의 `database_id`를 실제 ID로 바꾸고, `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`, `RESEND_API_KEY`, `RESEND_FROM`을 Worker secrets/variables로 설정한 다음 다음 명령을 실행합니다.
-
-```bash
-npm run db:migrate:remote
-npm run deploy
-```
+`.dev.vars`에는 실제 비밀값을 넣고 Git에 올리지 마세요.
 
 ## 현재 범위와 운영 전 확인
 

@@ -5,6 +5,7 @@
   "compatibility_date": "2026-11-17",
   "compatibility_flags": ["nodejs_compat"],
   "upload_source_maps": true,
+  "keep_vars": true,
   "assets": {
     "directory": ".open-next/assets",
     "binding": "ASSETS"
@@ -16,7 +17,6 @@
     {
       "binding": "DB",
       "database_name": "euclion",
-      "database_id": "00000000-0000-0000-0000-000000000001",
       "migrations_dir": "migrations"
     }
   ]
