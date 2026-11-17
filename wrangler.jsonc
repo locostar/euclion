@@ -17,6 +17,7 @@
     {
       "binding": "DB",
       "database_name": "euclion",
+      "database_id": "34becc88-8dd8-4ce6-91d6-86d5554aa4cf",
       "migrations_dir": "migrations"
     }
   ]
