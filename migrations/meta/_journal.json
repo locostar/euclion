@@ -1,0 +1,27 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "6",
+      "when": 1794938918758,
+      "tag": "0000_worthless_menace",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1794942752292,
+      "tag": "0001_complete_toxin",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1794942884391,
+      "tag": "0002_ambitious_nicolaos",
+      "breakpoints": true
+    }
+  ]
+}
