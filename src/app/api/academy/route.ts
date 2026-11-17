@@ -57,9 +57,6 @@ export async function POST(request: Request) {
   if (!session) {
     return apiError(401, "UNAUTHENTICATED", "로그인이 필요합니다.");
   }
-  if (!session.user.emailVerified) {
-    return apiError(403, "EMAIL_UNVERIFIED", "먼저 이메일 주소를 확인해 주세요.");
-  }
 
   const activeOrganization = await env.DB.prepare(
     `SELECT active_organization_id

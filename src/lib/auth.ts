@@ -34,7 +34,6 @@ export function createAuth(env: CloudflareEnv) {
     plugins: authPlugins,
     emailAndPassword: {
       enabled: true,
-      requireEmailVerification: true,
       minPasswordLength: 12,
       maxPasswordLength: 128,
       sendResetPassword: async ({ user, url }) => {
@@ -42,16 +41,6 @@ export function createAuth(env: CloudflareEnv) {
           to: user.email,
           subject: "Euclion 비밀번호 재설정",
           text: `비밀번호를 재설정하려면 다음 링크를 여세요:\n${url}`,
-        });
-      },
-    },
-    emailVerification: {
-      sendOnSignUp: true,
-      sendVerificationEmail: async ({ user, url }) => {
-        await sendEmail(env, {
-          to: user.email,
-          subject: "Euclion 이메일 주소 확인",
-          text: `이메일 주소를 확인하려면 다음 링크를 여세요:\n${url}`,
         });
       },
     },

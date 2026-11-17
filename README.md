@@ -36,9 +36,9 @@ npm run build:cf
 3. Worker의 **Settings → Variables and Secrets**에서 다음 항목을 설정합니다.
    - `BETTER_AUTH_URL`: `wrangler.jsonc`에 설정된 Worker URL (`https://euclion.locostartt.workers.dev`)
    - `BETTER_AUTH_SECRET`: 안전하게 생성한 32자 이상의 무작위 비밀값 (Secret)
-   - `RESEND_API_KEY`: Resend API 키 (Secret)
-   - `RESEND_FROM`: Resend에서 인증한 발신 주소
-4. Resend에서 발신 도메인을 인증합니다. 이메일 확인과 비밀번호 재설정 메일은 이 발신 설정이 있어야 전송됩니다.
+   - `RESEND_API_KEY`: 비밀번호 재설정 메일을 사용할 경우 Resend API 키 (Secret)
+   - `RESEND_FROM`: 비밀번호 재설정 메일을 사용할 경우 Resend에서 인증한 발신 주소
+4. 현재 가입과 로그인은 이메일 확인 없이 진행됩니다. Resend 메일 설정은 비밀번호 재설정 메일을 사용할 때 필요합니다.
 5. Worker Builds의 빌드 설정을 다음처럼 지정합니다.
    - **Build command:** `npm run build:cf && npm run db:migrate:remote`
    - **Deploy command:** `npx wrangler deploy`
@@ -64,7 +64,7 @@ npm run preview
 
 ## 현재 범위와 운영 전 확인
 
-- 이메일 확인이 필요한 계정 가입·로그인, 학원 최초 등록, 학원별 학생·반·출결 저장을 지원합니다. 학생 개인정보 API 응답은 캐시되지 않으며 소속 확인 후에만 처리됩니다.
+- 이메일과 비밀번호로 가입·로그인할 수 있으며, 이메일 확인은 요구하지 않습니다. 학원 최초 등록과 학원별 학생·반·출결 저장을 지원합니다. 학생 개인정보 API 응답은 캐시되지 않으며 소속 확인 후에만 처리됩니다.
 - 학원당 관리자 계정 1개를 만들 수 있습니다. 직원 초대·권한 관리, 상담, 수업 일정, 수강료, 알림은 아직 연결되지 않았습니다.
 - 이 버전은 운영 보안·개인정보보호 검토, 도메인·이메일 설정, 백업·복구 테스트를 마친 서비스가 아닙니다. 실제 개인정보를 입력하거나 운영에 사용하기 전에 이를 완료해야 합니다.
 - Cloudflare 계정 인증과 Resend 발신 도메인/API 키는 이 저장소에 포함하지 않습니다.
