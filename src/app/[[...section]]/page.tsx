@@ -314,8 +314,7 @@ function Dashboard({ academy, user }: {
   const [savingBilling, setSavingBilling] = useState(false);
   const [seatOccupancies, setSeatOccupancies] = useState<SeatOccupancy[]>([]);
   const [seatPrices, setSeatPrices] = useState<Record<string, number>>({});
-  const [selectedSeat, setSelectedSeat] = useState<{ roomNumber: number; seatNumber: number } | null>(null);
-  const [seatStudentId, setSeatStudentId] = useState("");
+  const [selectedUnseatedStudentId, setSelectedUnseatedStudentId] = useState<string | null>(null);
   const [pricingSeat, setPricingSeat] = useState<{ roomNumber: number; seatNumber: number } | null>(null);
   const [seatPriceForm, setSeatPriceForm] = useState("0");
   const [seatClock, setSeatClock] = useState(() => Date.now());
@@ -331,9 +330,6 @@ function Dashboard({ academy, user }: {
   const billingQueryPeriod = page === "dashboard"
     ? currentDate.slice(0, 7)
     : billingPeriod || currentDate.slice(0, 7);
-  const selectedSeatGender = selectedSeat
-    ? selectedSeat.roomNumber % 2 === 1 ? "male" : "female"
-    : null;
   const needsRoster = [
     "dashboard", "students", "withdrawn-students", "student-new", "classes",
     "class-new", "attendance", "attendance-list", "seats", "billing", "payments",
@@ -534,8 +530,11 @@ function Dashboard({ academy, user }: {
   const classNames = (ids: string[]) => ids.map((id) => classes.find((item) => item.id === id)?.name).filter(Boolean).join(", ");
   const activeStudents = students.filter((s) => s.status === "재원");
   const seatedStudentIds = new Set(seatOccupancies.flatMap((seat) => seat.student_id ? [seat.student_id] : []));
-  const unseatedStudents = activeStudents.filter(
-    (student) => !seatedStudentIds.has(student.id) && student.gender === selectedSeatGender,
+  const unseatedStudents = activeStudents
+    .filter((student) => !seatedStudentIds.has(student.id))
+    .sort((a, b) => a.name.localeCompare(b.name, "ko"));
+  const selectedUnseatedStudent = unseatedStudents.find(
+    (student) => student.id === selectedUnseatedStudentId,
   );
   const shownStudents = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -859,20 +858,20 @@ function Dashboard({ academy, user }: {
       setError(caught instanceof Error ? caught.message : "납부 상태를 변경하지 못했습니다.");
     }
   }
-  async function assignSeat(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!selectedSeat || !seatStudentId) return;
+  async function assignSeat(
+    studentId: string,
+    destination: { roomNumber: number; seatNumber: number },
+  ) {
     setSavingSeat(true);
     setError("");
     try {
       await requestJson<{ assigned: boolean }>("/api/seats", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...selectedSeat, studentId: seatStudentId }),
+        body: JSON.stringify({ ...destination, studentId }),
       });
       await Promise.all([reloadSeats(), reloadData()]);
-      setSelectedSeat(null);
-      setSeatStudentId("");
+      setSelectedUnseatedStudentId(null);
       setMessage("좌석을 배정했습니다. 출입 상태는 지문 스캔 연동 시 자동 반영됩니다.");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "좌석을 배정하지 못했습니다.");
@@ -955,7 +954,7 @@ function Dashboard({ academy, user }: {
         { method: action === "add" ? "PUT" : "DELETE" },
       );
       await reloadSeats();
-      setSelectedSeat(null);
+      setSelectedUnseatedStudentId(null);
       setMessage(action === "add"
         ? `${formatNumber(result.created ?? 0)}명의 더미 좌석 데이터를 추가했습니다.`
         : `${formatNumber(result.deleted ?? 0)}개의 더미 좌석 데이터를 삭제했습니다.`);
@@ -1040,12 +1039,23 @@ function Dashboard({ academy, user }: {
         {error && <p className="error-message" role="alert">{error}</p>}
         <div className="seat-info panel"><div><strong>총 {formatNumber(64)}석</strong><span>홀수 방은 남학생 · 짝수 방은 여학생 전용</span></div><div className="seat-legend"><span><i className="seat-legend-present" /> 출석(입실)</span><span><i className="seat-legend-absent" /> 결석(미스캔)</span><span><i className="seat-legend-free" /> 공좌석</span><span><i className="seat-legend-exited" /> 퇴실</span></div></div>
         {movingSeatStudentId && <div className="panel seat-move-banner"><span><strong>{students.find((student) => student.id === movingSeatStudentId)?.name}</strong> 학생을 이동할 빈 좌석을 선택해 주세요.</span><Button variant="outline" disabled={savingSeat} onClick={() => setMovingSeatStudentId(null)}>이동 취소</Button></div>}
-        {selectedSeat && <form className="panel seat-assignment-form" onSubmit={assignSeat}>
-          <div><h2>{formatNumber(selectedSeat.roomNumber)}번 방 · {formatNumber(selectedSeat.seatNumber)}번 좌석 배정</h2><p>{selectedSeatGender === "male" ? "남학생 전용 방" : "여학생 전용 방"} · 월 좌석 원비 {formatNumber(seatPrices[`${selectedSeat.roomNumber}:${selectedSeat.seatNumber}`] ?? 0)}원</p></div>
-          <Field label="재원 학생" required><select required value={seatStudentId} onChange={(event) => setSeatStudentId(event.target.value)}><option value="" disabled>학생 선택</option>{unseatedStudents.map((student) => <option value={student.id} key={student.id}>{student.name} · {student.gender === "male" ? "남학생" : "여학생"} · {[student.school, student.grade].filter(Boolean).join(" ")}</option>)}</select></Field>
-          <div className="seat-form-actions"><Button variant="outline" onClick={() => setSelectedSeat(null)}>취소</Button><Button type="submit" disabled={savingSeat || !unseatedStudents.length}>{savingSeat ? "배정 중..." : "좌석 배정"} <ArrowRight size={16} /></Button></div>
-          {!unseatedStudents.length && <p className="seat-empty-note">이 방에 배정할 수 있는 미배정 재원 학생이 없습니다.</p>}
-        </form>}
+        <section className="panel seat-unassigned-panel">
+          <div className="seat-unassigned-heading">
+            <div><h2>좌석 미배정 학생 <span>{formatNumber(unseatedStudents.length)}명</span></h2><p>{selectedUnseatedStudent ? `${selectedUnseatedStudent.name} 학생이 선택되었습니다. 성별에 맞는 빈 좌석을 눌러 배정하세요.` : "학생 이름을 선택한 다음 배치도에서 빈 좌석을 누르면 배정됩니다."}</p></div>
+            {selectedUnseatedStudent && <Button variant="outline" disabled={savingSeat} onClick={() => setSelectedUnseatedStudentId(null)}>선택 취소</Button>}
+          </div>
+          {unseatedStudents.length ? <div className="seat-unassigned-list">{unseatedStudents.map((student) => <button
+            type="button"
+            className={`seat-unassigned-student ${student.id === selectedUnseatedStudentId ? "seat-unassigned-student-selected" : ""}`}
+            key={student.id}
+            disabled={savingSeat || !student.gender}
+            aria-pressed={student.id === selectedUnseatedStudentId}
+            onClick={() => {
+              setMovingSeatStudentId(null);
+              setSelectedUnseatedStudentId(student.id === selectedUnseatedStudentId ? null : student.id);
+            }}
+          ><strong>{student.name}</strong><span>{student.gender ? student.gender === "male" ? "남학생" : "여학생" : "성별 미지정"}</span><small>{[student.school, student.grade].filter(Boolean).join(" · ") || "학교·학년 미입력"}</small></button>)}</div> : <p className="seat-unassigned-empty">좌석 배정을 기다리는 재원 학생이 없습니다.</p>}
+        </section>
         {pricingSeat && <form className="panel seat-price-form" onSubmit={saveSeatPrice}>
           <div><h2>{formatNumber(pricingSeat.roomNumber)}번 방 · {formatNumber(pricingSeat.seatNumber)}번 좌석 원비</h2><p>이 좌석에 배정된 학생의 월 수강료에 더해집니다.</p></div>
           <Field label="월 좌석 원비 (원)"><input type="text" inputMode="numeric" pattern="[0-9,]*" value={formatNumber(Number(seatPriceForm || 0))} onChange={(event) => setSeatPriceForm(event.target.value.replace(/\D/g, ""))} /></Field>
@@ -1054,21 +1064,24 @@ function Dashboard({ academy, user }: {
         <div className="seat-map">{["좌측 구역", "우측 구역"].map((side) => <section className="seat-side panel" key={side}><div className="seat-side-heading"><div><h2>{side}</h2><p>{side === "좌측 구역" ? "각 방 10석" : "각 방 6석"} · {side === "좌측 구역" ? "홀수 방 남학생" : "짝수 방 여학생"}</p></div><span className="seat-hall-label">복도</span></div><div className="seat-room-list">{seatRooms.filter((room) => room.side === side).map((room) => <article className={`seat-room ${room.number <= 4 ? "room-left" : "room-right"}`} key={room.number}><div className="seat-room-heading"><h3>{formatNumber(room.number)}번 방 · {room.number % 2 === 1 ? "남학생" : "여학생"}</h3><span>{formatNumber(seatOccupancies.filter((seat) => seat.room_number === room.number).length)} / {formatNumber(room.capacity)}석</span></div><div className={`seat-grid ${room.number <= 4 ? "seat-grid-left" : "seat-grid-right"}`}>{Array.from({ length: room.capacity }, (_, index) => {
           const seatNumber = index + 1;
           const occupant = seatOccupancies.find((seat) => seat.room_number === room.number && seat.seat_number === seatNumber);
-          const selected = selectedSeat?.roomNumber === room.number && selectedSeat.seatNumber === seatNumber;
+          const roomGender = room.number % 2 === 1 ? "male" : "female";
+          const assignmentStudent = movingSeatStudentId
+            ? students.find((student) => student.id === movingSeatStudentId)
+            : selectedUnseatedStudent;
+          const canAssignHere = assignmentStudent?.gender === roomGender;
           return <div className={`seat-cell ${occupant ? `seat-status-${occupant.status}` : "seat-status-vacant"}`} key={seatNumber}>
-            <button type="button" className={`seat-tile ${occupant ? `seat-tile-${occupant.status}` : "seat-tile-vacant"} ${selected ? "seat-tile-selected" : ""}`} disabled={savingSeat} onClick={() => {
+            <button type="button" className={`seat-tile ${occupant ? `seat-tile-${occupant.status}` : "seat-tile-vacant"} ${!occupant && canAssignHere ? "seat-tile-ready" : ""}`} disabled={savingSeat || (!occupant && !canAssignHere)} onClick={() => {
               const destination = { roomNumber: room.number, seatNumber };
               if (!occupant && movingSeatStudentId) {
                 void moveSeat(movingSeatStudentId, destination);
-              } else if (occupant && !occupant.is_demo && occupant.student_id) {
-                setSelectedSeat(null);
+              } else if (occupant && !selectedUnseatedStudent && !movingSeatStudentId && !occupant.is_demo && occupant.student_id) {
+                setSelectedUnseatedStudentId(null);
                 setMovingSeatStudentId(occupant.student_id);
-              } else if (!occupant) {
-                setSelectedSeat(destination);
-                setSeatStudentId(unseatedStudents[0]?.id ?? "");
+              } else if (!occupant && selectedUnseatedStudent && canAssignHere) {
+                void assignSeat(selectedUnseatedStudent.id, destination);
               }
-            }} aria-label={occupant ? `${room.number}번 방 ${seatNumber}번 좌석, ${occupant.student_name}, ${seatStatusLabels[occupant.status]}${!occupant.is_demo ? ", 이동하려면 선택" : ""}` : `${room.number}번 방 ${seatNumber}번 좌석, 공좌석${movingSeatStudentId ? ", 이동 목적지" : ""}`}><span className="seat-tile-number">{formatNumber(seatNumber)}번</span>{occupant ? <><span className="seat-full-name">{occupant.student_name}</span><span className="seat-tile-status">{seatStatusLabels[occupant.status]}</span></> : <span className="seat-tile-status">{movingSeatStudentId ? "이동" : "공좌석"}</span>}</button>
-            <div className="seat-tooltip" role="tooltip"><strong>{occupant ? <>{occupant.student_name}{occupant.is_demo && <small className="demo-tag">더미</small>}</> : "공좌석"}</strong>{occupant && <><span>{[occupant.school, occupant.grade].filter(Boolean).join(" · ")}</span><span>입실 {new Date(occupant.entered_at).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })}</span><span>오늘 누적 {formatDuration(0, occupant.total_duration_ms + (occupant.status === "present" ? Math.max(0, seatClock - occupant.entered_at) : 0))}</span></>}<span>월 좌석 원비 {formatNumber(seatPrices[`${room.number}:${seatNumber}`] ?? 0)}원</span><button type="button" onClick={(event) => { event.stopPropagation(); setSelectedSeat(null); setPricingSeat({ roomNumber: room.number, seatNumber }); setSeatPriceForm(String(seatPrices[`${room.number}:${seatNumber}`] ?? 0)); }}>좌석 원비 설정</button></div>
+            }} aria-label={occupant ? `${room.number}번 방 ${seatNumber}번 좌석, ${occupant.student_name}, ${seatStatusLabels[occupant.status]}${!occupant.is_demo ? ", 이동하려면 선택" : ""}` : `${room.number}번 방 ${seatNumber}번 좌석, 공좌석${canAssignHere ? `, ${assignmentStudent?.name} 배정` : ""}`}><span className="seat-tile-number">{formatNumber(seatNumber)}번</span>{occupant ? <><span className="seat-full-name">{occupant.student_name}</span><span className="seat-tile-status">{seatStatusLabels[occupant.status]}</span></> : <span className="seat-tile-status">{canAssignHere ? "배정" : "공좌석"}</span>}</button>
+            <div className="seat-tooltip" role="tooltip"><strong>{occupant ? <>{occupant.student_name}{occupant.is_demo && <small className="demo-tag">더미</small>}</> : "공좌석"}</strong>{occupant && <><span>{[occupant.school, occupant.grade].filter(Boolean).join(" · ")}</span><span>입실 {new Date(occupant.entered_at).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })}</span><span>오늘 누적 {formatDuration(0, occupant.total_duration_ms + (occupant.status === "present" ? Math.max(0, seatClock - occupant.entered_at) : 0))}</span></>}<span>월 좌석 원비 {formatNumber(seatPrices[`${room.number}:${seatNumber}`] ?? 0)}원</span><button type="button" onClick={(event) => { event.stopPropagation(); setPricingSeat({ roomNumber: room.number, seatNumber }); setSeatPriceForm(String(seatPrices[`${room.number}:${seatNumber}`] ?? 0)); }}>좌석 원비 설정</button></div>
           </div>;
         })}</div></article>)}</div></section>)}</div>
         <div className="placeholder-info seat-future-note"><CircleAlert size={17} /><span>좌석 출입 상태는 학생별 스캔 API에서 출석·퇴실로 전환되고 15초마다 화면에 반영됩니다. 실제 지문 판독기 연동과 좌석 조명은 기기 연동 단계가 남아 있습니다. 퇴원 처리 시 좌석은 자동으로 비워집니다.</span></div>
