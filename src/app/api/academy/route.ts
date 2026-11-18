@@ -6,6 +6,7 @@ import { z } from "zod";
 
 const academyInput = z.object({
   name: z.string().trim().min(2).max(100),
+  role: z.enum(["owner", "admin", "member"]).default("owner"),
 });
 
 export async function GET(request: Request) {
@@ -94,6 +95,15 @@ export async function POST(request: Request) {
 
   if (!created) {
     return apiError(500, "ACADEMY_CREATION_FAILED", "학원을 등록하지 못했습니다.");
+  }
+
+  const updatedMembership = await env.DB.prepare(
+    "UPDATE member SET role = ? WHERE organization_id = ? AND user_id = ?",
+  )
+    .bind(parsed.data.role, created.id, session.user.id)
+    .run();
+  if (updatedMembership.meta.changes === 0) {
+    return apiError(500, "ACADEMY_ROLE_UPDATE_FAILED", "가입 직급을 저장하지 못했습니다.");
   }
 
   await auth.api.setActiveOrganization({

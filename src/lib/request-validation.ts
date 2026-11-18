@@ -52,6 +52,7 @@ export const studentInput = z.object({
   phone: optionalText(30),
   guardianPhone: optionalText(30),
   school: optionalText(120),
+  grade: optionalText(40),
   address: optionalText(240),
   enrolledOn: date,
   status: z.enum(["active", "withdrawn"]).optional(),
@@ -101,6 +102,12 @@ export const tuitionChargeInput = z.object({
 export const tuitionChargeStatusInput = z.object({
   chargeId: z.string().min(1).max(80),
   status: z.enum(["unpaid", "paid"]),
+});
+
+export const seatAssignmentInput = z.object({
+  roomNumber: z.number().int().min(1).max(8),
+  seatNumber: z.number().int().min(1).max(10),
+  studentId: z.string().min(1).max(80),
 });
 
 export function isJsonParseResult<T extends z.ZodType>(

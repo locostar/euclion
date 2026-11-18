@@ -49,7 +49,7 @@ export async function PATCH(request: Request, { params }: RouteContext) {
     result.context.env.DB.prepare(
       `UPDATE students
        SET name = ?, birth_date = ?, phone = ?, guardian_phone = ?,
-           school = ?, address = ?, enrolled_on = ?, status = ?, memo = ?,
+           school = ?, grade = ?, address = ?, enrolled_on = ?, status = ?, memo = ?,
            updated_at = cast(unixepoch('subsecond') * 1000 as integer)
        WHERE id = ? AND organization_id = ?`,
     ).bind(
@@ -58,6 +58,7 @@ export async function PATCH(request: Request, { params }: RouteContext) {
       student.phone,
       student.guardianPhone,
       student.school,
+      student.grade,
       student.address,
       student.enrolledOn,
       student.status ?? "active",
@@ -68,6 +69,10 @@ export async function PATCH(request: Request, { params }: RouteContext) {
     result.context.env.DB.prepare(
       "DELETE FROM class_students WHERE student_id = ? AND organization_id = ?",
     ).bind(id, result.context.organizationId),
+    result.context.env.DB.prepare(
+      `DELETE FROM seat_occupancy
+       WHERE student_id = ? AND organization_id = ? AND ? = 'withdrawn'`,
+    ).bind(id, result.context.organizationId, student.status ?? "active"),
     ...student.classIds.map((classId) =>
       result.context.env.DB.prepare(
         `INSERT INTO class_students (organization_id, class_id, student_id)

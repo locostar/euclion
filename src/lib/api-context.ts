@@ -63,9 +63,12 @@ export async function getAcademyContext(
     };
   }
 
-  if (requireManager && !["owner", "admin"].includes(membership.role)) {
+  if (
+    requireManager &&
+    !["owner", "admin", "member"].includes(membership.role)
+  ) {
     return {
-      response: apiError(403, "MANAGER_REQUIRED", "관리자 권한이 필요합니다."),
+      response: apiError(403, "ROLE_NOT_SUPPORTED", "학원 구성원 권한을 확인할 수 없습니다."),
     };
   }
 

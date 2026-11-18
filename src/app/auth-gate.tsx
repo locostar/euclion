@@ -6,6 +6,13 @@ import { authClient } from "@/lib/auth-client";
 
 type Academy = { id: string; name: string; role: string } | null;
 type AuthenticatedUser = { name: string; email: string };
+type AcademyRole = "owner" | "admin" | "member";
+const signupRoleStorageKey = "euclion.signup.role";
+const roleLabels: Record<AcademyRole, string> = {
+  owner: "원장",
+  admin: "관리자",
+  member: "팀원",
+};
 
 function Logo() {
   return <div className="brand auth-brand"><span className="brand-mark"><span /></span><span>euclion<span className="brand-dot">.</span></span></div>;
@@ -20,6 +27,7 @@ function AuthForm() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [role, setRole] = useState<AcademyRole>("owner");
   const [error, setError] = useState("");
   const [pending, setPending] = useState(false);
 
@@ -35,6 +43,7 @@ function AuthForm() {
           setError(result.error.message ?? "가입을 완료하지 못했습니다.");
           return;
         }
+        window.sessionStorage.setItem(signupRoleStorageKey, role);
         await authClient.$store.notify("$sessionSignal");
         return;
       }
@@ -44,6 +53,7 @@ function AuthForm() {
         setError(result.error.message ?? "로그인하지 못했습니다.");
         return;
       }
+      window.sessionStorage.removeItem(signupRoleStorageKey);
       await authClient.$store.notify("$sessionSignal");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "요청을 완료하지 못했습니다.");
@@ -55,9 +65,10 @@ function AuthForm() {
   return <div className="auth-content">
     <span className="auth-icon"><LockKeyhole size={21} /></span>
     <h1>{mode === "sign-in" ? "다시 만나 반가워요" : "Euclion 시작하기"}</h1>
-    <p>{mode === "sign-in" ? "학원 업무를 안전하게 이어서 관리하세요." : "관리자 계정을 만들고 학원을 등록하세요."}</p>
+    <p>{mode === "sign-in" ? "학원 업무를 안전하게 이어서 관리하세요." : "직급을 선택해 계정을 만들고 학원을 등록하세요."}</p>
     <form className="auth-form" onSubmit={submit}>
       {mode === "sign-up" && <label className="field">이름<input autoComplete="name" required maxLength={100} value={name} onChange={(event) => setName(event.target.value)} /></label>}
+      {mode === "sign-up" && <label className="field">직급<select value={role} onChange={(event) => setRole(event.target.value as AcademyRole)}>{Object.entries(roleLabels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select><small>현재는 세 직급 모두 같은 권한으로 운영됩니다.</small></label>}
       <label className="field">이메일<input type="email" autoComplete="email" required maxLength={254} value={email} onChange={(event) => setEmail(event.target.value)} /></label>
       <label className="field">비밀번호<input type="password" autoComplete={mode === "sign-in" ? "current-password" : "new-password"} required minLength={12} maxLength={128} value={password} onChange={(event) => setPassword(event.target.value)} /><small>12자 이상 입력해 주세요.</small></label>
       {error && <p className="error-message" role="alert">{error}</p>}
@@ -69,6 +80,13 @@ function AuthForm() {
 
 function AcademySetup({ onCreated }: { onCreated: () => void }) {
   const [name, setName] = useState("");
+  const [role, setRole] = useState<AcademyRole>(() => {
+    if (typeof window === "undefined") return "owner";
+    const savedRole = window.sessionStorage.getItem(signupRoleStorageKey);
+    return savedRole && Object.hasOwn(roleLabels, savedRole)
+      ? savedRole as AcademyRole
+      : "owner";
+  });
   const [error, setError] = useState("");
   const [pending, setPending] = useState(false);
 
@@ -80,13 +98,14 @@ function AcademySetup({ onCreated }: { onCreated: () => void }) {
       const response = await fetch("/api/academy", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name }),
+        body: JSON.stringify({ name, role }),
       });
       const result = await response.json() as { error?: { message?: string } };
       if (!response.ok) {
         setError(result.error?.message ?? "학원을 등록하지 못했습니다.");
         return;
       }
+      window.sessionStorage.removeItem(signupRoleStorageKey);
       onCreated();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "요청을 완료하지 못했습니다.");
@@ -98,9 +117,10 @@ function AcademySetup({ onCreated }: { onCreated: () => void }) {
   return <AuthCard><div className="auth-content">
     <span className="auth-icon"><Sparkles size={21} /></span>
     <h1>학원을 등록해 주세요</h1>
-    <p>학원 이름은 소속 데이터를 분리하는 데 사용됩니다. 등록 후에는 학원 관리자만 데이터를 관리할 수 있습니다.</p>
+    <p>학원별로 데이터가 분리됩니다. 현재는 원장·관리자·팀원 모두 같은 권한으로 사용할 수 있습니다.</p>
     <form className="auth-form" onSubmit={submit}>
       <label className="field">학원 이름<input required minLength={2} maxLength={100} value={name} onChange={(event) => setName(event.target.value)} placeholder="예: 유클리온 학원" /></label>
+      <label className="field">가입 직급<select value={role} onChange={(event) => setRole(event.target.value as AcademyRole)}>{Object.entries(roleLabels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label>
       {error && <p className="error-message" role="alert">{error}</p>}
       <button className="button button-primary auth-submit" type="submit" disabled={pending}>{pending ? <LoaderCircle className="spin" size={16} /> : null}학원 등록하기 <ArrowRight size={16} /></button>
     </form>

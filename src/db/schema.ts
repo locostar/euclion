@@ -23,6 +23,7 @@ export const students = sqliteTable(
     phone: text("phone"),
     guardianPhone: text("guardian_phone"),
     school: text("school"),
+    grade: text("grade"),
     address: text("address"),
     enrolledOn: text("enrolled_on").notNull(),
     status: text("status", { enum: ["active", "withdrawn"] })
@@ -192,6 +193,42 @@ export const tuitionCharges = sqliteTable(
       table.organizationId,
       table.billingPeriod,
       table.status,
+    ),
+  ],
+);
+
+export const seatOccupancy = sqliteTable(
+  "seat_occupancy",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    roomNumber: integer("room_number").notNull(),
+    seatNumber: integer("seat_number").notNull(),
+    studentId: text("student_id"),
+    studentName: text("student_name").notNull(),
+    school: text("school"),
+    grade: text("grade"),
+    enteredAt: integer("entered_at", { mode: "timestamp_ms" }).notNull(),
+    isDemo: integer("is_demo", { mode: "boolean" }).notNull().default(false),
+  },
+  (table) => [
+    uniqueIndex("seat_occupancy_org_room_seat_uq").on(
+      table.organizationId,
+      table.roomNumber,
+      table.seatNumber,
+    ),
+    uniqueIndex("seat_occupancy_org_student_uq")
+      .on(table.organizationId, table.studentId)
+      .where(sql`${table.studentId} IS NOT NULL`),
+    foreignKey({
+      columns: [table.studentId, table.organizationId],
+      foreignColumns: [students.id, students.organizationId],
+    }).onDelete("cascade"),
+    index("seat_occupancy_org_demo_idx").on(
+      table.organizationId,
+      table.isDemo,
     ),
   ],
 );
