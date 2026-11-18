@@ -1,5 +1,9 @@
 import { getAcademyContext, apiError, apiJson } from "@/lib/api-context";
-import { parseJson, seatAssignmentInput } from "@/lib/request-validation";
+import {
+  parseJson,
+  seatAssignmentInput,
+  seatStatusInput,
+} from "@/lib/request-validation";
 
 type SeatRow = {
   id: string;
@@ -9,6 +13,7 @@ type SeatRow = {
   student_name: string;
   school: string | null;
   grade: string | null;
+  status: "present" | "absent" | "in_use" | "exited";
   entered_at: number;
   is_demo: number;
 };
@@ -41,7 +46,7 @@ export async function GET(request: Request) {
             CASE WHEN so.student_id IS NOT NULL THEN s.name ELSE so.student_name END AS student_name,
             CASE WHEN so.student_id IS NOT NULL THEN s.school ELSE so.school END AS school,
             CASE WHEN so.student_id IS NOT NULL THEN s.grade ELSE so.grade END AS grade,
-            so.entered_at, so.is_demo
+            so.status, so.entered_at, so.is_demo
      FROM seat_occupancy so
      LEFT JOIN students s
        ON s.id = so.student_id AND s.organization_id = so.organization_id
@@ -82,8 +87,8 @@ export async function POST(request: Request) {
   const inserted = await result.context.env.DB.prepare(
     `INSERT INTO seat_occupancy
       (id, organization_id, room_number, seat_number, student_id,
-       student_name, school, grade, entered_at, is_demo)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+        student_name, school, grade, status, entered_at, is_demo)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'in_use', ?, 0)
      ON CONFLICT DO NOTHING`,
   )
     .bind(
@@ -104,6 +109,25 @@ export async function POST(request: Request) {
   }
 
   return apiJson({ assigned: true }, { status: 201 });
+}
+
+export async function PATCH(request: Request) {
+  const result = await getAcademyContext(request, true);
+  if ("response" in result) return result.response;
+
+  const parsed = await parseJson(request, seatStatusInput);
+  if ("response" in parsed) return parsed.response;
+
+  const updated = await result.context.env.DB.prepare(
+    `UPDATE seat_occupancy
+     SET status = ? WHERE id = ? AND organization_id = ?`,
+  )
+    .bind(parsed.data.status, parsed.data.seatId, result.context.organizationId)
+    .run();
+  if (updated.meta.changes === 0) {
+    return apiError(404, "SEAT_NOT_FOUND", "사용 중인 좌석을 찾을 수 없습니다.");
+  }
+  return apiJson({ updated: true });
 }
 
 export async function DELETE(request: Request) {
@@ -176,8 +200,8 @@ export async function PUT(request: Request) {
       return result.context.env.DB.prepare(
         `INSERT INTO seat_occupancy
           (id, organization_id, room_number, seat_number, student_id,
-           student_name, school, grade, entered_at, is_demo)
-         VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, 1)`,
+           student_name, school, grade, status, entered_at, is_demo)
+         VALUES (?, ?, ?, ?, NULL, ?, ?, ?, 'in_use', ?, 1)`,
       ).bind(
         crypto.randomUUID(),
         result.context.organizationId,

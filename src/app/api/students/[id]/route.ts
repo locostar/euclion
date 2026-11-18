@@ -49,7 +49,8 @@ export async function PATCH(request: Request, { params }: RouteContext) {
     result.context.env.DB.prepare(
       `UPDATE students
        SET name = ?, birth_date = ?, phone = ?, guardian_phone = ?,
-           school = ?, grade = ?, address = ?, enrolled_on = ?, status = ?, memo = ?,
+           school = ?, grade = ?, graduated_school = ?, address = ?,
+           enrolled_on = ?, status = ?, memo = ?,
            updated_at = cast(unixepoch('subsecond') * 1000 as integer)
        WHERE id = ? AND organization_id = ?`,
     ).bind(
@@ -59,6 +60,7 @@ export async function PATCH(request: Request, { params }: RouteContext) {
       student.guardianPhone,
       student.school,
       student.grade,
+      student.graduatedSchool,
       student.address,
       student.enrolledOn,
       student.status ?? "active",

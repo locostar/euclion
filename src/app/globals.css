@@ -156,6 +156,46 @@ input, select { min-height: 40px; color: #435a4e; background: white; border: 1px
 @media (max-width: 900px) { .seat-map { grid-template-columns: 1fr; }.seat-assignment-form { grid-template-columns: 1fr 1fr; }.seat-assignment-form > div:first-child { grid-column: 1 / -1; } }
 @media (max-width: 520px) { .seat-demo-actions { width: 100%; }.seat-info { align-items: flex-start; flex-direction: column; }.seat-assignment-form { grid-template-columns: 1fr; }.seat-assignment-form > div:first-child { grid-column: auto; }.seat-form-actions { justify-content: flex-end; }.seat-side { padding: 14px; }.seat-room { padding: 10px; }.seat-grid { gap: 5px; }.seat-tile { min-height: 48px; } }
 
+:root { --muted: #596b60; }
+.nav-home, .nav-trigger { color: #43584b; font-weight: 700; }
+.nav-home { align-self: stretch; }
+.account span, .dashboard-welcome p, .page-heading p, .section-title p,
+.panel-heading p, .list-heading p, .form-section-title p, .stat-label,
+.stat-foot, .sample-label, th, .detail-grid span, .detail-note,
+.attendance-memo, .billing-toolbar p, .billing-summary-card > span {
+  color: #617267;
+  font-weight: 600;
+}
+.dropdown button, td, .field, .class-meta, .date-chip { color: #40564a; }
+.eyebrow, .date-chip span { color: #527a61; }
+.input::placeholder, input::placeholder { color: #79887d; }
+.seat-legend { color: #354c3e; font-weight: 700; }
+.seat-legend-present { background: #36945b; }
+.seat-legend-absent { background: #d65b57; }
+.seat-legend-free { background: #a4adb3; }
+.seat-legend-in-use { background: #3982d0; }
+.seat-legend-exited { background: #9470b8; }
+.seat-tile { min-height: 76px; color: #273c30; font-weight: 700; }
+.seat-tile-number { font-size: 10px; color: #384b40; }
+.seat-full-name { max-width: 100%; color: #1d3125; font-size: 11px; font-weight: 800; line-height: 1.2; overflow-wrap: anywhere; }
+.seat-tile-status { font-size: 10px; font-weight: 700; }
+.seat-tile-vacant { border-color: #c3cbd0; background: #eef1f3; color: #48535a; }
+.seat-tile-present { border-color: #80c397; background: #e2f4e7; color: #24633a; }
+.seat-tile-absent { border-color: #e7a09c; background: #fff0ef; color: #9c3935; }
+.seat-tile-in_use { border-color: #91b9e8; background: #eaf3ff; color: #245c9e; }
+.seat-tile-exited { border-color: #c4a8dd; background: #f3edfa; color: #65458b; }
+.seat-tile-selected { outline: 2px solid #33724d; outline-offset: 1px; }
+.seat-tooltip { color: #394b3f; font-size: 12px; }
+.seat-tooltip > span { color: #4c5c51; font-weight: 600; }
+.seat-status-field { display: grid; gap: 4px; color: #34493b; font-weight: 700; }
+.seat-status-field select { min-height: 34px; padding: 5px 8px; color: #304337; font-size: 12px; }
+.seat-tooltip button { color: #773f37; font-weight: 700; }
+.seat-info > div:first-child > span, .seat-room-heading span { color: #56685c; font-weight: 600; }
+.field input, .field select { color: #33483a; }
+.status-pill { color: #526357; font-weight: 700; }
+.stat-number.pending-number { color: #765136; }
+@media (max-width: 520px) { .seat-tile { min-height: 68px; }.seat-full-name { font-size: 10px; } }
+
 .billing-summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 18px; }
 .billing-summary-card { display: flex; flex-direction: column; gap: 14px; }
 .billing-summary-card > span { color: #87978e; font-size: 12px; }

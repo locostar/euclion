@@ -53,11 +53,23 @@ export const studentInput = z.object({
   guardianPhone: optionalText(30),
   school: optionalText(120),
   grade: optionalText(40),
+  graduatedSchool: optionalText(120),
   address: optionalText(240),
   enrolledOn: date,
   status: z.enum(["active", "withdrawn"]).optional(),
   memo: optionalText(1000),
   classIds: z.array(z.string().min(1).max(80)).max(50).default([]),
+}).superRefine((student, context) => {
+  if (
+    ["재수", "삼수", "N수"].includes(student.grade ?? "") &&
+    !student.graduatedSchool
+  ) {
+    context.addIssue({
+      code: "custom",
+      path: ["graduatedSchool"],
+      message: "졸업한 고등학교를 입력해 주세요.",
+    });
+  }
 });
 
 export const classInput = z.object({
@@ -108,6 +120,11 @@ export const seatAssignmentInput = z.object({
   roomNumber: z.number().int().min(1).max(8),
   seatNumber: z.number().int().min(1).max(10),
   studentId: z.string().min(1).max(80),
+});
+
+export const seatStatusInput = z.object({
+  seatId: z.string().min(1).max(80),
+  status: z.enum(["present", "absent", "in_use", "exited"]),
 });
 
 export function isJsonParseResult<T extends z.ZodType>(

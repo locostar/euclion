@@ -13,7 +13,7 @@ import { authClient } from "@/lib/auth-client";
 type Page = "dashboard" | "students" | "student-new" | "consultations" | "classes" | "class-new" | "schedule" | "attendance" | "attendance-list" | "seats" | "billing" | "billing-settings" | "payments" | "academy" | "staff" | "permissions";
 type Student = {
   id: string; name: string; birth: string; phone: string; guardian: string;
-  school: string; grade: string; address: string; enrolled: string; classes: string[];
+  school: string; grade: string; graduatedSchool: string; address: string; enrolled: string; classes: string[];
   memo: string; status: "재원" | "퇴원";
 };
 type ClassRoom = { id: string; name: string; subject: string; teacher: string; grade: string; capacity: string; room: string; start: string; end: string; memo: string };
@@ -24,7 +24,7 @@ type Attendance = Record<string, AttendanceEntry>;
 const menus: { label: string; items: [string, Page][] }[] = [
   { label: "학생 관리", items: [["학생 목록", "students"], ["신규 학생 등록", "student-new"], ["상담 기록", "consultations"]] },
   { label: "수업 관리", items: [["반 목록", "classes"], ["반 등록", "class-new"], ["수업 일정", "schedule"]] },
-  { label: "출결 관리", items: [["출결 입력", "attendance"], ["출결 조회", "attendance-list"], ["좌석 배치도", "seats"]] },
+  { label: "출결 관리", items: [["출결 입력", "attendance"], ["출결 조회", "attendance-list"]] },
   { label: "수강료 관리", items: [["청구 내역", "billing"], ["정기 청구 설정", "billing-settings"], ["납부 내역", "payments"]] },
   { label: "학원 관리", items: [["학원 정보", "academy"], ["직원 관리", "staff"], ["직원별 권한", "permissions"]] },
 ];
@@ -40,7 +40,7 @@ const today = () => {
 };
 const dateLabel = (value: string) => value.replaceAll("-", ".");
 const formatNumber = (value: number) => value.toLocaleString("ko-KR");
-const emptyStudent = (): Omit<Student, "id" | "status"> => ({ name: "", birth: "", phone: "", guardian: "", school: "", grade: "", address: "", enrolled: "", classes: [], memo: "" });
+const emptyStudent = (): Omit<Student, "id" | "status"> => ({ name: "", birth: "", phone: "", guardian: "", school: "", grade: "", graduatedSchool: "", address: "", enrolled: "", classes: [], memo: "" });
 const emptyClass = (): Omit<ClassRoom, "id"> => ({ name: "", subject: "", teacher: "", grade: "", capacity: "", room: "", start: "", end: "", memo: "" });
 const subscribeDate = (callback: () => void) => {
   const timer = window.setInterval(callback, 60_000);
@@ -75,6 +75,7 @@ type StudentApi = {
   guardian_phone: string | null;
   school: string | null;
   grade: string | null;
+  graduated_school: string | null;
   address: string | null;
   enrolled_on: string;
   status: "active" | "withdrawn";
@@ -120,6 +121,7 @@ type SeatOccupancy = {
   student_name: string;
   school: string | null;
   grade: string | null;
+  status: "present" | "absent" | "in_use" | "exited";
   entered_at: number;
   is_demo: boolean;
 };
@@ -142,6 +144,7 @@ function toStudent(row: StudentApi): Student {
     guardian: row.guardian_phone ?? "",
     school: row.school ?? "",
     grade: row.grade ?? "",
+    graduatedSchool: row.graduated_school ?? "",
     address: row.address ?? "",
     enrolled: row.enrolled_on,
     classes: row.classIds,
@@ -191,6 +194,12 @@ const attendanceLabels: Record<NonNullable<AttendanceApi["status"]>, AttendanceS
   late: "지각",
   left_early: "조퇴",
   makeup: "보강",
+};
+const seatStatusLabels: Record<SeatOccupancy["status"], string> = {
+  present: "출석",
+  absent: "결석",
+  in_use: "입실중",
+  exited: "퇴실",
 };
 
 function Dashboard({ academy, user }: {
@@ -362,6 +371,7 @@ function Dashboard({ academy, user }: {
         guardianPhone: studentForm.guardian,
         school: studentForm.school,
         grade: studentForm.grade,
+        graduatedSchool: studentForm.graduatedSchool,
         address: studentForm.address,
         enrolledOn: studentForm.enrolled,
         status: students.find((student) => student.id === editing)?.status === "퇴원" ? "withdrawn" : "active",
@@ -545,6 +555,20 @@ function Dashboard({ academy, user }: {
       setError(caught instanceof Error ? caught.message : "좌석을 비우지 못했습니다.");
     }
   }
+  async function updateSeatStatus(seat: SeatOccupancy, status: SeatOccupancy["status"]) {
+    setError("");
+    try {
+      await requestJson<{ updated: boolean }>("/api/seats", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ seatId: seat.id, status }),
+      });
+      await reloadSeats();
+      setMessage(`${seat.student_name} 학생 상태를 ${seatStatusLabels[status]}으로 변경했습니다.`);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "좌석 상태를 변경하지 못했습니다.");
+    }
+  }
   async function changeDemoSeats(action: "add" | "remove") {
     setSavingDemo(true);
     setError("");
@@ -570,6 +594,7 @@ function Dashboard({ academy, user }: {
       <button className="logo-button" onClick={() => go("dashboard")} aria-label="Euclion 대시보드"><Logo /></button>
       <nav className={`nav ${mobileOpen ? "nav-open" : ""}`} aria-label="주 메뉴">
         <button className={`nav-home ${page === "dashboard" ? "nav-active" : ""}`} onClick={() => go("dashboard")}>홈</button>
+        <button className={`nav-home ${page === "seats" ? "nav-active" : ""}`} onClick={() => go("seats")}>좌석 배치도</button>
         {menus.map((menu) => <div className="nav-group" key={menu.label}>
           <button className={`nav-trigger ${menu.items.some(([, target]) => target === page) ? "nav-active" : ""}`}>{menu.label}<ChevronDown size={13} /></button>
           <div className="dropdown">{menu.items.map(([label, target]) => <button key={target} onClick={() => target === "student-new" ? startNewStudent() : go(target)}>{label}<ChevronRight size={14} /></button>)}</div>
@@ -604,7 +629,7 @@ function Dashboard({ academy, user }: {
         <section className="panel recent-panel"><div className="panel-heading"><div><h2>학생 현황</h2><p>등록된 학생 목록을 확인해 보세요.</p></div><button className="text-link" onClick={() => go("students")}>전체 보기 <ArrowRight size={15} /></button></div><StudentTable students={students.slice(0, 4)} classNames={classNames} select={(id) => { setPage("students"); setSelectedStudent(id); }} /></section>
       </>}
 
-      {page === "students" && selected && <><button className="back-link" onClick={() => setSelectedStudent(null)}><ArrowLeft size={16} /> 학생 목록으로</button><PageHeading eyebrow="STUDENT MANAGEMENT" title={selected.name} description={`${selected.status} · 등록일 ${dateLabel(selected.enrolled)}`} action={<Button variant="outline" onClick={() => editStudent(selected)}>정보 수정</Button>} />{message && <div className="success-message">{message}</div>}<div className="panel detail-panel"><h2>학생 기본 정보</h2><div className="detail-grid">{[["이름", selected.name], ["생년월일", selected.birth], ["학생 연락처", selected.phone], ["보호자 연락처", selected.guardian], ["학교", selected.school], ["학년", selected.grade], ["주소", selected.address], ["등록일", selected.enrolled], ["수강 반", classNames(selected.classes) || "없음"], ["메모", selected.memo]].map(([label, value]) => <div key={label}><span>{label}</span><strong>{value}</strong></div>)}</div></div><div className="detail-note"><CircleAlert size={17} /> 출결 자동화는 지문 인식기 연동 후 제공할 예정입니다.</div></>}
+      {page === "students" && selected && <><button className="back-link" onClick={() => setSelectedStudent(null)}><ArrowLeft size={16} /> 학생 목록으로</button><PageHeading eyebrow="STUDENT MANAGEMENT" title={selected.name} description={`${selected.status} · 등록일 ${dateLabel(selected.enrolled)}`} action={<Button variant="outline" onClick={() => editStudent(selected)}>정보 수정</Button>} />{message && <div className="success-message">{message}</div>}<div className="panel detail-panel"><h2>학생 기본 정보</h2><div className="detail-grid">{[["이름", selected.name], ["생년월일", selected.birth], ["학생 연락처", selected.phone], ["보호자 연락처", selected.guardian], ["학교", selected.school], ["학년·수험 상태", selected.grade], ...(selected.graduatedSchool ? [["졸업 고등학교", selected.graduatedSchool]] : []), ["주소", selected.address], ["등록일", selected.enrolled], ["수강 반", classNames(selected.classes) || "없음"], ["메모", selected.memo]].map(([label, value]) => <div key={label}><span>{label}</span><strong>{value}</strong></div>)}</div></div><div className="detail-note"><CircleAlert size={17} /> 출결 자동화는 지문 인식기 연동 후 제공할 예정입니다.</div></>}
       {page === "students" && !selected && <><PageHeading eyebrow="STUDENT MANAGEMENT" title="학생 관리" description="학교와 학년·수험 상태를 나누어 관리합니다." action={<Button onClick={startNewStudent}><Plus size={17} /> 신규 학생 등록</Button>} />{message && <div className="success-message">{message}</div>}<section className="panel list-panel"><div className="list-heading"><div><h2>전체 학생 <span>{formatNumber(shownStudents.length)}</span></h2><p>학생을 선택하면 상세 정보를 볼 수 있습니다.</p></div></div><div className="filters"><label className="search-field"><Search size={17} /><input placeholder="이름, 연락처, 학교, 학년, 등록일 검색" value={search} onChange={(e) => setSearch(e.target.value)} aria-label="학생 검색" /></label><select aria-label="재원 상태" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}><option>전체 상태</option><option>재원</option><option>퇴원</option></select><select aria-label="수강 반" value={classFilter} onChange={(e) => setClassFilter(e.target.value)}><option>전체 반</option>{classes.map((c) => <option value={c.id} key={c.id}>{c.name}</option>)}</select></div><StudentTable students={shownStudents} classNames={classNames} select={(id) => setSelectedStudent(id)} /></section></>}
 
       {page === "student-new" && <><button className="back-link" onClick={() => go("students")}><ArrowLeft size={16} /> 학생 목록으로</button><PageHeading eyebrow="STUDENT MANAGEMENT" title={editing ? "학생 정보 수정" : "신규 학생 등록"} description="학생의 기본 정보와 수강 정보를 입력해 주세요." /><form onSubmit={saveStudent} className="panel form-panel"><div className="form-section-title"><div><h2>학생 정보</h2><p>입력한 정보는 현재 학원에 안전하게 저장됩니다.</p></div><span className="required-note">* 필수 입력</span></div><div className="form-grid">
@@ -614,6 +639,7 @@ function Dashboard({ academy, user }: {
         <Field label="보호자 연락처" required><input required type="tel" value={studentForm.guardian} onChange={(e) => setStudentForm({ ...studentForm, guardian: e.target.value })} placeholder="010-0000-0000" /></Field>
         <Field label="학교" required><input required maxLength={120} value={studentForm.school} onChange={(e) => setStudentForm({ ...studentForm, school: e.target.value })} placeholder="예: 인천해송고등학교" /></Field>
         <Field label="학년·수험 상태" required><select required value={studentForm.grade} onChange={(e) => setStudentForm({ ...studentForm, grade: e.target.value })}><option value="" disabled>학년 또는 수험 상태 선택</option>{["고1", "고2", "고3", "재수", "삼수", "N수"].map((grade) => <option value={grade} key={grade}>{grade}</option>)}</select></Field>
+        {["재수", "삼수", "N수"].includes(studentForm.grade) && <Field label="졸업 고등학교" required><input required maxLength={120} value={studentForm.graduatedSchool} onChange={(e) => setStudentForm({ ...studentForm, graduatedSchool: e.target.value })} placeholder="졸업한 고등학교 이름" /></Field>}
         <Field label="등록일" required><input required type="date" value={studentForm.enrolled} onChange={(e) => setStudentForm({ ...studentForm, enrolled: e.target.value })} /></Field>
         <Field label="주소" required><input required value={studentForm.address} onChange={(e) => setStudentForm({ ...studentForm, address: e.target.value })} placeholder="주소를 입력해 주세요" /></Field>
         <Field label="메모" required><input required value={studentForm.memo} onChange={(e) => setStudentForm({ ...studentForm, memo: e.target.value })} placeholder="메모를 입력해 주세요" /></Field>
@@ -628,15 +654,15 @@ function Dashboard({ academy, user }: {
         <PageHeading eyebrow="STUDY ROOM" title="좌석 배치도" description="좌석에 마우스를 올리면 학생, 입실 시각, 누적 이용 시간이 표시됩니다." action={<div className="seat-demo-actions"><Button variant="outline" onClick={() => void changeDemoSeats("add")} disabled={savingDemo || seatOccupancies.some((seat) => seat.is_demo)}>더미 데이터 추가</Button><Button variant="outline" onClick={() => void changeDemoSeats("remove")} disabled={savingDemo || !seatOccupancies.some((seat) => seat.is_demo)}>더미 데이터 삭제</Button></div>} />
         {message && <div className="success-message">{message}</div>}
         {error && <p className="error-message" role="alert">{error}</p>}
-        <div className="seat-info panel"><div><strong>총 {formatNumber(64)}석</strong><span>좌측 4개 방 · 각 10석 / 우측 4개 방 · 각 6석</span></div><div className="seat-legend"><span><i className="seat-legend-free" /> 빈 좌석</span><span><i className="seat-legend-in-use" /> 사용 중</span><span><i className="seat-legend-demo" /> 더미 데이터</span></div></div>
+        <div className="seat-info panel"><div><strong>총 {formatNumber(64)}석</strong><span>좌측 4개 방 · 각 10석 / 우측 4개 방 · 각 6석</span></div><div className="seat-legend"><span><i className="seat-legend-present" /> 출석</span><span><i className="seat-legend-absent" /> 결석</span><span><i className="seat-legend-free" /> 공좌석</span><span><i className="seat-legend-in-use" /> 입실중</span><span><i className="seat-legend-exited" /> 퇴실</span></div></div>
         {selectedSeat && <form className="panel seat-assignment-form" onSubmit={assignSeat}><div><h2>{formatNumber(selectedSeat.roomNumber)}번 방 · {formatNumber(selectedSeat.seatNumber)}번 좌석 배정</h2><p>현재는 수동으로 좌석을 배정하고 입실 시각을 기록합니다.</p></div><Field label="재원 학생" required><select required value={seatStudentId} onChange={(event) => setSeatStudentId(event.target.value)}><option value="" disabled>학생 선택</option>{unseatedStudents.map((student) => <option value={student.id} key={student.id}>{student.name} · {[student.school, student.grade].filter(Boolean).join(" ")}</option>)}</select></Field><div className="seat-form-actions"><Button variant="outline" onClick={() => setSelectedSeat(null)}>취소</Button><Button type="submit" disabled={savingSeat || !unseatedStudents.length}>{savingSeat ? "배정 중..." : "좌석 배정"} <ArrowRight size={16} /></Button></div>{!unseatedStudents.length && <p className="seat-empty-note">배정할 재원 학생이 없거나 모두 좌석을 사용 중입니다.</p>}</form>}
         <div className="seat-map">{["좌측 구역", "우측 구역"].map((side) => <section className="seat-side panel" key={side}><div className="seat-side-heading"><div><h2>{side}</h2><p>{side === "좌측 구역" ? "각 방 10석" : "각 방 6석"}</p></div><span className="seat-hall-label">복도</span></div><div className="seat-room-list">{seatRooms.filter((room) => room.side === side).map((room) => <article className={`seat-room ${room.number <= 4 ? "room-left" : "room-right"}`} key={room.number}><div className="seat-room-heading"><h3>{formatNumber(room.number)}번 방</h3><span>{formatNumber(seatOccupancies.filter((seat) => seat.room_number === room.number).length)} / {formatNumber(room.capacity)}석</span></div><div className={`seat-grid ${room.number <= 4 ? "seat-grid-left" : "seat-grid-right"}`}>{Array.from({ length: room.capacity }, (_, index) => {
           const seatNumber = index + 1;
           const occupant = seatOccupancies.find((seat) => seat.room_number === room.number && seat.seat_number === seatNumber);
           const selected = selectedSeat?.roomNumber === room.number && selectedSeat.seatNumber === seatNumber;
-          return <div className={`seat-cell ${occupant ? "seat-cell-occupied" : ""}`} key={seatNumber}>
-            <button type="button" className={`seat-tile ${occupant ? "seat-tile-occupied" : ""} ${selected ? "seat-tile-selected" : ""}`} onClick={() => { if (!occupant) { setSelectedSeat({ roomNumber: room.number, seatNumber }); setSeatStudentId(unseatedStudents[0]?.id ?? ""); } }} aria-label={occupant ? `${room.number}번 방 ${seatNumber}번 좌석, ${occupant.student_name} 사용 중` : `${room.number}번 방 ${seatNumber}번 좌석, 빈 좌석 배정`}><span className="seat-tile-number">{formatNumber(seatNumber)}</span><span className="seat-lamp" />{occupant && <span className="seat-initial">{occupant.student_name.slice(0, 1)}</span>}</button>
-            {occupant && <div className="seat-tooltip" role="tooltip"><strong>{occupant.student_name}{occupant.is_demo && <small className="demo-tag">더미</small>}</strong><span>{[occupant.school, occupant.grade].filter(Boolean).join(" · ")}</span><span>입실 {new Date(occupant.entered_at).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })}</span><span>누적 {formatDuration(occupant.entered_at, seatClock)}</span><button type="button" onClick={() => void clearSeat(occupant)}>좌석 비우기</button></div>}
+          return <div className={`seat-cell ${occupant ? `seat-status-${occupant.status}` : "seat-status-vacant"}`} key={seatNumber}>
+            <button type="button" className={`seat-tile ${occupant ? `seat-tile-${occupant.status}` : "seat-tile-vacant"} ${selected ? "seat-tile-selected" : ""}`} onClick={() => { if (!occupant) { setSelectedSeat({ roomNumber: room.number, seatNumber }); setSeatStudentId(unseatedStudents[0]?.id ?? ""); } }} aria-label={occupant ? `${room.number}번 방 ${seatNumber}번 좌석, ${occupant.student_name}, ${seatStatusLabels[occupant.status]}` : `${room.number}번 방 ${seatNumber}번 좌석, 공좌석`}><span className="seat-tile-number">{formatNumber(seatNumber)}번</span>{occupant ? <><span className="seat-full-name">{occupant.student_name}</span><span className="seat-tile-status">{seatStatusLabels[occupant.status]}</span></> : <span className="seat-tile-status">공좌석</span>}</button>
+            {occupant && <div className="seat-tooltip" role="tooltip"><strong>{occupant.student_name}{occupant.is_demo && <small className="demo-tag">더미</small>}</strong><span>{[occupant.school, occupant.grade].filter(Boolean).join(" · ")}</span><span>입실 {new Date(occupant.entered_at).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })}</span><span>누적 {formatDuration(occupant.entered_at, seatClock)}</span><label className="seat-status-field">상태<select value={occupant.status} onChange={(event) => void updateSeatStatus(occupant, event.target.value as SeatOccupancy["status"])}>{Object.entries(seatStatusLabels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label><button type="button" onClick={() => void clearSeat(occupant)}>좌석 비우기</button></div>}
           </div>;
         })}</div></article>)}</div></section>)}</div>
         <div className="placeholder-info seat-future-note"><CircleAlert size={17} /><span>지문 인식 자동 출결과 학생 좌석의 실제 조명 연동은 추후 기기 연동 단계에서 구현합니다. 지금은 학생 좌석 배정과 입실 시각 기록만 지원합니다.</span></div>

@@ -13,6 +13,7 @@ type StudentRow = {
   guardian_phone: string | null;
   school: string | null;
   grade: string | null;
+  graduated_school: string | null;
   address: string | null;
   enrolled_on: string;
   status: "active" | "withdrawn";
@@ -44,7 +45,8 @@ export async function GET(request: Request) {
 
   const rows = await result.context.env.DB.prepare(
     `SELECT s.id, s.name, s.birth_date, s.phone, s.guardian_phone,
-            s.school, s.grade, s.address, s.enrolled_on, s.status, s.memo,
+            s.school, s.grade, s.graduated_school, s.address,
+            s.enrolled_on, s.status, s.memo,
             cs.class_id
      FROM students s
      LEFT JOIN class_students cs
@@ -70,6 +72,7 @@ export async function GET(request: Request) {
       guardian_phone: row.guardian_phone,
       school: row.school,
       grade: row.grade,
+      graduated_school: row.graduated_school,
       address: row.address,
       enrolled_on: row.enrolled_on,
       status: row.status,
@@ -103,8 +106,8 @@ export async function POST(request: Request) {
     result.context.env.DB.prepare(
       `INSERT INTO students
         (id, organization_id, name, birth_date, phone, guardian_phone,
-         school, grade, address, enrolled_on, status, memo)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?)`,
+         school, grade, graduated_school, address, enrolled_on, status, memo)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?)`,
     ).bind(
       id,
       result.context.organizationId,
@@ -114,6 +117,7 @@ export async function POST(request: Request) {
       student.guardianPhone,
       student.school,
       student.grade,
+      student.graduatedSchool,
       student.address,
       student.enrolledOn,
       student.memo,
