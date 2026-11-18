@@ -108,6 +108,41 @@ export const attendanceInput = z.object({
     ),
 });
 
+export const consultationInput = z.object({
+  studentId: z.string().min(1).max(80),
+  consultationDate: date,
+  category: z.enum(["학습", "생활", "진로", "학부모", "기타"]),
+  summary: z.string().trim().min(1).max(3000),
+  nextAction: optionalText(1000),
+});
+
+const assessmentCommon = {
+  studentId: z.string().min(1).max(80),
+  assessmentDate: date,
+  note: optionalText(1000),
+};
+
+export const assessmentInput = z.discriminatedUnion("assessmentType", [
+  z.object({
+    ...assessmentCommon,
+    assessmentType: z.literal("mock_exam"),
+    title: z.string().trim().min(1).max(120),
+    subject: z.string().trim().min(1).max(40),
+    grade: z.number().int().min(1).max(9),
+    score: z.number().int().min(0).max(100).nullable().default(null),
+  }),
+  z.object({
+    ...assessmentCommon,
+    assessmentType: z.literal("vocabulary"),
+    title: z.string().trim().max(120).default("영단어 시험"),
+    score: z.number().int().min(0).max(1000),
+    maxScore: z.number().int().min(1).max(1000),
+  }).refine((assessment) => assessment.score <= assessment.maxScore, {
+    path: ["score"],
+    message: "맞힌 개수는 전체 문항 수를 넘을 수 없습니다.",
+  }),
+]);
+
 export const tuitionChargeInput = z.object({
   studentId: z.string().min(1).max(80),
   billingPeriod: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/),

@@ -231,6 +231,43 @@ input, select { min-height: 40px; color: #435a4e; background: white; border: 1px
 .stat-number.pending-number { color: #765136; }
 @media (max-width: 520px) { .seat-tile { min-height: 68px; }.seat-full-name { font-size: 10px; } }
 
+.learning-toolbar { display: grid; grid-template-columns: minmax(210px, .7fr) 1.3fr; align-items: end; gap: 24px; margin-bottom: 18px; }
+.learning-tabs { display: flex; flex-wrap: wrap; gap: 7px; }
+.learning-tab { min-height: 38px; padding: 8px 14px; border: 1px solid #e3ebe5; border-radius: 8px; background: #fff; color: #53665b; font-size: 12px; font-weight: 700; }
+.learning-tab:hover, .learning-tab-active { border-color: #85b395; background: #edf7ef; color: #24633a; }
+.learning-form, .learning-record-panel, .grade-trend-panel { margin-bottom: 18px; }
+.learning-form .panel-heading { margin-bottom: 18px; }
+.learning-form .form-grid { margin-bottom: 18px; }
+.learning-form textarea { width: 100%; padding: 11px 12px; border: 1px solid #dfe8e1; border-radius: 8px; color: #33483a; font: inherit; font-size: 12px; resize: vertical; }
+.learning-form textarea:focus-visible { outline: 3px solid #a3d8c6; outline-offset: 2px; }
+.learning-exam-fields { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.learning-record-list { display: grid; gap: 10px; }
+.learning-record { display: grid; grid-template-columns: 105px minmax(0, 1fr) 32px; align-items: start; gap: 16px; padding: 15px; border: 1px solid #eaf0eb; border-radius: 9px; }
+.learning-record-meta { display: grid; gap: 7px; }
+.learning-record-meta strong { color: #34493b; font-size: 12px; }
+.learning-record-meta span { width: fit-content; padding: 4px 8px; border-radius: 999px; background: #edf4ef; color: #3d7050; font-size: 10px; font-weight: 700; }
+.learning-record-content p { color: #354a3c; font-size: 12px; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; }
+.learning-record-content small { display: block; margin-top: 8px; color: #617267; font-size: 11px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
+.learning-delete { justify-self: end; color: #9c625c; }
+.learning-delete:hover { color: #9a3e36; }
+.grade-chart-scroll { overflow-x: auto; }
+.grade-chart { display: block; width: 100%; min-width: 520px; max-height: 270px; }
+.grade-chart-grid { stroke: #e8eee9; stroke-width: 1; }
+.grade-chart-axis { fill: #617267; font-size: 10px; font-weight: 600; text-anchor: middle; }
+.grade-chart-date { fill: #56685c; font-size: 10px; font-weight: 600; }
+.grade-chart-legend { display: flex; flex-wrap: wrap; gap: 12px; margin: 4px 0 0 38px; }
+.grade-chart-legend span { display: inline-flex; align-items: center; gap: 6px; color: #43584b; font-size: 11px; font-weight: 700; }
+.grade-chart-legend i { width: 9px; height: 9px; border-radius: 50%; }
+.grade-chart-note { margin: 12px 0 0 38px; color: #617267; font-size: 11px; }
+.grade-pill { display: inline-flex; min-width: 52px; justify-content: center; padding: 4px 8px; border-radius: 999px; background: #edf4ef; color: #286440; font-weight: 700; }
+.vocabulary-summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; margin-bottom: 18px; }
+.vocabulary-summary > div { display: grid; gap: 10px; }
+.vocabulary-summary span { color: #617267; font-size: 11px; font-weight: 700; }
+.vocabulary-summary strong { color: #244b36; font-size: 22px; }
+.vocabulary-summary small { margin-left: 5px; color: #617267; font-size: 11px; font-weight: 500; }
+@media (max-width: 780px) { .learning-toolbar { grid-template-columns: 1fr; gap: 16px; }.learning-exam-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 520px) { .learning-toolbar, .learning-form, .learning-record-panel, .grade-trend-panel { padding: 17px; }.learning-tabs { width: 100%; }.learning-tab { flex: 1; padding-inline: 8px; font-size: 11px; }.learning-exam-fields, .vocabulary-summary { grid-template-columns: 1fr 1fr; gap: 14px; }.learning-record { grid-template-columns: 1fr 30px; gap: 9px 12px; }.learning-record-meta { grid-column: 1 / -1; display: flex; align-items: center; }.learning-record-content { grid-column: 1; }.learning-delete { grid-column: 2; grid-row: 2; }.grade-chart-legend, .grade-chart-note { margin-left: 0; } }
+
 .billing-summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 18px; }
 .billing-summary-card { display: flex; flex-direction: column; gap: 14px; }
 .billing-summary-card > span { color: #87978e; font-size: 12px; }

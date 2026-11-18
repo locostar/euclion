@@ -176,6 +176,84 @@ export const attendance = sqliteTable(
   ],
 );
 
+export const consultationRecords = sqliteTable(
+  "consultation_records",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    studentId: text("student_id").notNull(),
+    consultationDate: text("consultation_date").notNull(),
+    category: text("category").notNull(),
+    summary: text("summary").notNull(),
+    nextAction: text("next_action"),
+    recordedBy: text("recorded_by").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    createdAt: integer("created_at", { mode: "timestamp_ms" })
+      .notNull()
+      .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.studentId, table.organizationId],
+      foreignColumns: [students.id, students.organizationId],
+    }).onDelete("cascade"),
+    index("consultation_records_org_student_date_idx").on(
+      table.organizationId,
+      table.studentId,
+      table.consultationDate,
+    ),
+  ],
+);
+
+export const studentAssessments = sqliteTable(
+  "student_assessments",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    studentId: text("student_id").notNull(),
+    assessmentType: text("assessment_type", {
+      enum: ["mock_exam", "vocabulary"],
+    }).notNull(),
+    assessmentDate: text("assessment_date").notNull(),
+    title: text("title").notNull().default(""),
+    subject: text("subject").notNull().default(""),
+    grade: integer("grade"),
+    score: integer("score"),
+    maxScore: integer("max_score"),
+    note: text("note"),
+    recordedBy: text("recorded_by").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    createdAt: integer("created_at", { mode: "timestamp_ms" })
+      .notNull()
+      .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.studentId, table.organizationId],
+      foreignColumns: [students.id, students.organizationId],
+    }).onDelete("cascade"),
+    uniqueIndex("student_assessments_org_student_series_uq").on(
+      table.organizationId,
+      table.studentId,
+      table.assessmentType,
+      table.assessmentDate,
+      table.title,
+      table.subject,
+    ),
+    index("student_assessments_org_student_date_idx").on(
+      table.organizationId,
+      table.studentId,
+      table.assessmentDate,
+    ),
+  ],
+);
+
 export const tuitionCharges = sqliteTable(
   "tuition_charges",
   {

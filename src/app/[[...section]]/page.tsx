@@ -3,7 +3,7 @@
 import {
   ArrowLeft, ArrowRight, Bell, BookOpen, CalendarDays,
   Check, ChevronDown, ChevronRight, CircleAlert, ClipboardCheck,
-  Fingerprint, Menu, MessageSquareText, Plus, Search, Sparkles,
+  Fingerprint, Menu, MessageSquareText, Plus, Search, Sparkles, Trash2,
   UsersRound, WalletCards, X,
 } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
@@ -24,16 +24,38 @@ type ClassRoom = { id: string; name: string; subject: string; teacher: string; g
 type AttendanceStatus = "출석" | "결석" | "지각" | "조퇴" | "보강";
 type AttendanceEntry = { status: AttendanceStatus; memo: string };
 type Attendance = Record<string, AttendanceEntry>;
+type ConsultationRecord = {
+  id: string;
+  student_id: string;
+  student_name: string;
+  consultation_date: string;
+  category: string;
+  summary: string;
+  next_action: string | null;
+  created_at: number;
+};
+type AssessmentRecord = {
+  id: string;
+  student_id: string;
+  student_name: string;
+  assessment_type: "mock_exam" | "vocabulary";
+  assessment_date: string;
+  title: string;
+  subject: string;
+  grade: number | null;
+  score: number | null;
+  max_score: number | null;
+  note: string | null;
+};
 
 const menus: { label: string; items: [string, Page][] }[] = [
-  { label: "학생 관리", items: [["학생 목록", "students"], ["퇴원 학생", "withdrawn-students"], ["신규 학생 등록", "student-new"], ["상담 기록", "consultations"]] },
+  { label: "학생 관리", items: [["학생 목록", "students"], ["퇴원 학생", "withdrawn-students"], ["신규 학생 등록", "student-new"], ["상담·학습 관리", "consultations"]] },
   { label: "수업 관리", items: [["반 목록", "classes"], ["반 등록", "class-new"], ["수업 일정", "schedule"]] },
-  { label: "출결 관리", items: [["출결 입력", "attendance"], ["출결 조회", "attendance-list"]] },
   { label: "수강료 관리", items: [["청구 내역", "billing"], ["정기 청구 설정", "billing-settings"], ["납부 내역", "payments"]] },
   { label: "학원 관리", items: [["학원 정보", "academy"], ["직원 관리", "staff"], ["직원별 권한", "permissions"]] },
 ];
 const labels: Record<Page, string> = {
-  dashboard: "대시보드", students: "학생 목록", "withdrawn-students": "퇴원 학생", "student-new": "신규 학생 등록", consultations: "상담 기록",
+  dashboard: "대시보드", students: "학생 목록", "withdrawn-students": "퇴원 학생", "student-new": "신규 학생 등록", consultations: "상담·학습 관리",
   classes: "반 목록", "class-new": "반 등록", schedule: "수업 일정", attendance: "출결 입력",
   "attendance-list": "출결 조회", seats: "좌석 배치도", billing: "청구 내역", "billing-settings": "정기 청구 설정",
   payments: "납부·환불 내역", academy: "학원 정보", staff: "직원 관리", permissions: "직원별 권한",
@@ -322,6 +344,20 @@ function Dashboard({ academy, user }: {
   const [savingSeatPrice, setSavingSeatPrice] = useState(false);
   const [savingDemo, setSavingDemo] = useState(false);
   const [movingSeatStudentId, setMovingSeatStudentId] = useState<string | null>(null);
+  const [learningStudentId, setLearningStudentId] = useState("");
+  const [learningTab, setLearningTab] = useState<"consultations" | "mock_exam" | "vocabulary">("consultations");
+  const [consultations, setConsultations] = useState<ConsultationRecord[]>([]);
+  const [assessments, setAssessments] = useState<AssessmentRecord[]>([]);
+  const [consultationForm, setConsultationForm] = useState({
+    date: today(), category: "학습", summary: "", nextAction: "",
+  });
+  const [mockExamForm, setMockExamForm] = useState({
+    date: today(), title: "", subject: "국어", grade: "3", score: "",
+  });
+  const [vocabularyForm, setVocabularyForm] = useState({
+    date: today(), title: "영단어 시험", score: "", maxScore: "",
+  });
+  const [savingLearningRecord, setSavingLearningRecord] = useState(false);
   const [guardianReminder, setGuardianReminder] = useState(DEFAULT_GUARDIAN_REMINDER);
   const [savingGuardianReminder, setSavingGuardianReminder] = useState(false);
   const [reminderPreview, setReminderPreview] = useState("");
@@ -332,8 +368,11 @@ function Dashboard({ academy, user }: {
     : billingPeriod || currentDate.slice(0, 7);
   const needsRoster = [
     "dashboard", "students", "withdrawn-students", "student-new", "classes",
-    "class-new", "attendance", "attendance-list", "seats", "billing", "payments",
+    "class-new", "attendance", "attendance-list", "seats", "billing", "payments", "consultations",
   ].includes(page);
+  const activeStudents = students.filter((s) => s.status === "재원");
+  const selectedLearningStudent = activeStudents.find((student) => student.id === learningStudentId)
+    ?? activeStudents[0];
 
   const reloadData = useCallback(async () => {
     try {
@@ -353,6 +392,29 @@ function Dashboard({ academy, user }: {
     const timer = window.setTimeout(() => { void reloadData(); }, 0);
     return () => window.clearTimeout(timer);
   }, [needsRoster, rosterLoaded, reloadData]);
+
+  useEffect(() => {
+    const studentId = selectedLearningStudent?.id;
+    if (page !== "consultations" || !studentId) return;
+
+    let active = true;
+    const query = `?studentId=${encodeURIComponent(studentId)}`;
+    Promise.all([
+      requestJson<ConsultationRecord[]>(`/api/consultations${query}`),
+      requestJson<AssessmentRecord[]>(`/api/assessments${query}`),
+    ]).then(([consultationRows, assessmentRows]) => {
+      if (!active) return;
+      setConsultations(consultationRows);
+      setAssessments(assessmentRows);
+      setDataError("");
+    }).catch((caught: unknown) => {
+      if (active) {
+        setDataError(caught instanceof Error ? caught.message : "상담·시험 기록을 불러오지 못했습니다.");
+      }
+    });
+
+    return () => { active = false; };
+  }, [page, selectedLearningStudent?.id]);
 
   useEffect(() => {
     if (
@@ -422,7 +484,7 @@ function Dashboard({ academy, user }: {
   }, []);
 
   useEffect(() => {
-    if (page !== "seats") return;
+    if (!["dashboard", "seats"].includes(page)) return;
     let active = true;
     const refresh = () => {
       if (document.visibilityState !== "visible") return;
@@ -433,12 +495,12 @@ function Dashboard({ academy, user }: {
       });
     };
     refresh();
-    const timer = window.setInterval(refresh, 15_000);
-    document.addEventListener("visibilitychange", refresh);
+    const timer = page === "seats" ? window.setInterval(refresh, 15_000) : undefined;
+    if (page === "seats") document.addEventListener("visibilitychange", refresh);
     return () => {
       active = false;
-      window.clearInterval(timer);
-      document.removeEventListener("visibilitychange", refresh);
+      if (timer !== undefined) window.clearInterval(timer);
+      if (page === "seats") document.removeEventListener("visibilitychange", refresh);
     };
   }, [page, reloadSeats]);
 
@@ -528,7 +590,6 @@ function Dashboard({ academy, user }: {
   };
   const startNewStudent = () => { setStudentForm({ ...emptyStudent(), enrolled: today() }); setEditing(null); setFingerprintRequested(false); go("student-new"); };
   const classNames = (ids: string[]) => ids.map((id) => classes.find((item) => item.id === id)?.name).filter(Boolean).join(", ");
-  const activeStudents = students.filter((s) => s.status === "재원");
   const seatedStudentIds = new Set(seatOccupancies.flatMap((seat) => seat.student_id ? [seat.student_id] : []));
   const unseatedStudents = activeStudents
     .filter((student) => !seatedStudentIds.has(student.id))
@@ -788,6 +849,102 @@ function Dashboard({ academy, user }: {
       setSavingAttendance(false);
     }
   }
+  async function reloadLearningRecords(studentId: string) {
+    const query = `?studentId=${encodeURIComponent(studentId)}`;
+    const [consultationRows, assessmentRows] = await Promise.all([
+      requestJson<ConsultationRecord[]>(`/api/consultations${query}`),
+      requestJson<AssessmentRecord[]>(`/api/assessments${query}`),
+    ]);
+    setConsultations(consultationRows);
+    setAssessments(assessmentRows);
+  }
+  async function saveConsultation(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!selectedLearningStudent) return;
+    setSavingLearningRecord(true);
+    setError("");
+    try {
+      await requestJson<{ id: string }>("/api/consultations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          studentId: selectedLearningStudent.id,
+          consultationDate: consultationForm.date,
+          category: consultationForm.category,
+          summary: consultationForm.summary,
+          nextAction: consultationForm.nextAction,
+        }),
+      });
+      await reloadLearningRecords(selectedLearningStudent.id);
+      setConsultationForm((current) => ({ ...current, summary: "", nextAction: "" }));
+      setMessage(`${selectedLearningStudent.name} 학생의 상담 기록을 저장했습니다.`);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "상담 기록을 저장하지 못했습니다.");
+    } finally {
+      setSavingLearningRecord(false);
+    }
+  }
+  async function saveAssessment(
+    event: FormEvent<HTMLFormElement>,
+    assessmentType: "mock_exam" | "vocabulary",
+  ) {
+    event.preventDefault();
+    if (!selectedLearningStudent) return;
+    setSavingLearningRecord(true);
+    setError("");
+    const payload = assessmentType === "mock_exam"
+      ? {
+        studentId: selectedLearningStudent.id,
+        assessmentType,
+        assessmentDate: mockExamForm.date,
+        title: mockExamForm.title,
+        subject: mockExamForm.subject,
+        grade: Number(mockExamForm.grade),
+        score: mockExamForm.score === "" ? null : Number(mockExamForm.score),
+        note: "",
+      }
+      : {
+        studentId: selectedLearningStudent.id,
+        assessmentType,
+        assessmentDate: vocabularyForm.date,
+        title: vocabularyForm.title,
+        score: Number(vocabularyForm.score),
+        maxScore: Number(vocabularyForm.maxScore),
+        note: "",
+      };
+    try {
+      await requestJson<{ id: string }>("/api/assessments", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      await reloadLearningRecords(selectedLearningStudent.id);
+      if (assessmentType === "mock_exam") {
+        setMockExamForm((current) => ({ ...current, score: "" }));
+        setMessage(`${selectedLearningStudent.name} 학생의 ${mockExamForm.title} ${mockExamForm.subject} 등급을 저장했습니다.`);
+      } else {
+        setVocabularyForm((current) => ({ ...current, score: "", maxScore: "" }));
+        setMessage(`${selectedLearningStudent.name} 학생의 영단어 시험 결과를 저장했습니다.`);
+      }
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "시험 결과를 저장하지 못했습니다.");
+    } finally {
+      setSavingLearningRecord(false);
+    }
+  }
+  async function deleteLearningRecord(kind: "consultations" | "assessments", id: string) {
+    if (!selectedLearningStudent || !window.confirm("이 기록을 삭제할까요?")) return;
+    setError("");
+    try {
+      await requestJson<{ deleted: boolean }>(`/api/${kind}?id=${encodeURIComponent(id)}`, {
+        method: "DELETE",
+      });
+      await reloadLearningRecords(selectedLearningStudent.id);
+      setMessage("기록을 삭제했습니다.");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "기록을 삭제하지 못했습니다.");
+    }
+  }
   function startBilling() {
     const firstStudent = activeStudents[0];
     setBillingForm({
@@ -993,12 +1150,12 @@ function Dashboard({ academy, user }: {
         <div className="section-title"><div><h2>한눈에 보는 우리 학원</h2><p>학원의 주요 현황을 확인해 보세요.</p></div><span className="sample-label">실시간 데이터</span></div>
         <div className="stats">
           <button className="stat-card" onClick={() => go("students")}><div className="stat-top"><span className="stat-icon mint"><UsersRound size={20} /></span><ArrowRight size={17} /></div><div className="stat-label">재원 학생</div><div className="stat-number">{formatNumber(activeStudents.length)}<small>명</small></div><div className="stat-foot"><span className="green-dot" /> 현재 재원 중인 학생</div></button>
-          <button className="stat-card" onClick={() => go("attendance")}><div className="stat-top"><span className="stat-icon blue"><ClipboardCheck size={20} /></span><ArrowRight size={17} /></div><div className="stat-label">오늘의 출결</div><div className="stat-number">{formatNumber(Object.entries(attendance).filter(([key]) => key.startsWith(`${currentDate}|`)).length)}<small>건 입력</small></div><div className="stat-foot"><span className="blue-dot" /> 저장된 출결 기록</div></button>
+          <button className="stat-card" onClick={() => go("seats")}><div className="stat-top"><span className="stat-icon blue"><ClipboardCheck size={20} /></span><ArrowRight size={17} /></div><div className="stat-label">오늘 출석한 좌석</div><div className="stat-number">{formatNumber(seatOccupancies.filter((seat) => seat.status !== "absent").length)}<small>석</small></div><div className="stat-foot"><span className="blue-dot" /> 좌석 배치도에서 관리</div></button>
           <button className="stat-card" onClick={() => go("billing")}><div className="stat-top"><span className="stat-icon peach"><WalletCards size={20} /></span><ArrowRight size={17} /></div><div className="stat-label">이번 달 미납 수강료</div><div className="stat-number pending-number">{formatNumber(billingCharges.filter((charge) => charge.status === "unpaid").reduce((total, charge) => total + charge.amount, 0))}<small>원</small></div><div className="stat-foot">{formatNumber(billingCharges.filter((charge) => charge.status === "unpaid").length)}건 미납</div></button>
         </div>
         <div className="dashboard-grid"><section className="panel quick-panel"><div className="panel-heading"><div><h2>빠른 실행</h2><p>자주 사용하는 업무를 바로 시작하세요.</p></div><span className="panel-icon"><Sparkles size={17} /></span></div>
           <div className="quick-grid">
-            {[{ icon: <Plus size={19} />, title: "학생 등록", desc: "새로운 학생 추가", action: startNewStudent, tone: "mint" }, { icon: <ClipboardCheck size={19} />, title: "출결 입력", desc: "오늘의 출결 기록", action: () => go("attendance"), tone: "blue" }, { icon: <BookOpen size={19} />, title: "반 관리", desc: "운영 중인 반 확인", action: () => go("classes"), tone: "purple" }, { icon: <MessageSquareText size={19} />, title: "상담 기록", desc: "학생 상담 내역", action: () => go("consultations"), tone: "peach" }].map((item) => <button className="quick-item" onClick={item.action} key={item.title}><span className={`quick-icon ${item.tone}`}>{item.icon}</span><span><strong>{item.title}</strong><small>{item.desc}</small></span><ChevronRight size={16} /></button>)}
+            {[{ icon: <Plus size={19} />, title: "학생 등록", desc: "새로운 학생 추가", action: startNewStudent, tone: "mint" }, { icon: <UsersRound size={19} />, title: "좌석 배치도", desc: "좌석과 출결 상태 관리", action: () => go("seats"), tone: "blue" }, { icon: <BookOpen size={19} />, title: "반 관리", desc: "운영 중인 반 확인", action: () => go("classes"), tone: "purple" }, { icon: <MessageSquareText size={19} />, title: "상담·학습 관리", desc: "상담 및 시험 성적 추이", action: () => go("consultations"), tone: "peach" }].map((item) => <button className="quick-item" onClick={item.action} key={item.title}><span className={`quick-icon ${item.tone}`}>{item.icon}</span><span><strong>{item.title}</strong><small>{item.desc}</small></span><ChevronRight size={16} /></button>)}
           </div></section>
           <section className="panel"><div className="panel-heading"><div><h2>알림과 할 일</h2><p>놓치지 않도록 한곳에서 확인해요.</p></div><Bell size={18} className="muted-icon" /></div><div className="dashboard-empty"><span><Check size={22} /></span><strong>아직 표시할 알림이 없어요</strong><p>실제 알림 기능은 준비 중입니다.</p></div></section>
         </div>
@@ -1131,7 +1288,68 @@ function Dashboard({ academy, user }: {
         </section>
       </>}
       {page === "billing-settings" && <><PageHeading eyebrow="TUITION MANAGEMENT" title={labels[page]} description="보호자 알림에 사용할 기본 문구를 설정합니다." />{message && <div className="success-message">{message}</div>}{error && <p className="error-message" role="alert">{error}</p>}<form onSubmit={saveGuardianReminder} className="panel form-panel reminder-settings-form"><div className="form-section-title"><div><h2>보호자 알림 기본 메시지</h2><p>중괄호 항목은 발송 대상 정보로 바뀝니다. 현재는 미리보기만 가능하며 실제 발송은 되지 않습니다.</p></div></div><Field label="기본 메시지" required><textarea required maxLength={1000} rows={7} value={guardianReminder} onChange={(event) => setGuardianReminder(event.target.value)} /></Field><div className="reminder-tokens"><span>{`{학생명}`}</span><span>{`{학원명}`}</span><span>{`{납부일}`}</span><span>{`{금액}`}</span></div><div className="form-actions"><Button type="submit" disabled={savingGuardianReminder || !guardianReminder.trim()}>{savingGuardianReminder ? "저장 중..." : "기본 메시지 저장"} <Check size={16} /></Button></div></form></>}
-      {(["consultations", "schedule", "academy", "staff", "permissions"] as Page[]).includes(page) && <><PageHeading eyebrow={page === "consultations" ? "STUDENT MANAGEMENT" : page === "schedule" ? "CLASS MANAGEMENT" : "ACADEMY SETTINGS"} title={labels[page]} description="논의한 기능을 차근차근 연결하고 있습니다." /><section className="panel placeholder-panel"><Empty title={`${labels[page]} 기능을 준비하고 있어요`} text="이 화면은 메뉴 구성 확인을 위한 자리입니다. 실제 데이터 저장이나 업무 처리는 아직 지원하지 않습니다." /><div className="placeholder-info"><CircleAlert size={17} /><span>{page === "schedule" ? "수업 일정과 휴강 처리 방식은 아직 정해지지 않았습니다." : ["staff", "permissions", "academy"].includes(page) ? "계정, 학원별 데이터 분리, 직원 권한은 아직 연결되지 않았습니다." : "기능을 준비하고 있습니다."}</span></div></section></>}
+      {page === "consultations" && <>
+        <PageHeading eyebrow="STUDENT COUNSELING & LEARNING" title="상담·학습 관리" description="학생별 상담 내용, 모의고사 등급 변화, 매일 영단어 시험 결과를 기록하고 확인합니다." />
+        {message && <div className="success-message">{message}</div>}
+        {error && <p className="error-message" role="alert">{error}</p>}
+        {!activeStudents.length ? <section className="panel"><Empty title="재원 학생이 없습니다" text="학생을 등록하면 상담과 시험 기록을 관리할 수 있습니다." /></section> : <>
+          <section className="panel learning-toolbar">
+            <Field label="학생 선택"><select value={selectedLearningStudent?.id ?? ""} onChange={(event) => { setLearningStudentId(event.target.value); setConsultations([]); setAssessments([]); setMessage(""); setError(""); }}><option value="" disabled>학생 선택</option>{activeStudents.map((student) => <option value={student.id} key={student.id}>{student.name} · {student.grade || "학년 미입력"}</option>)}</select></Field>
+            <div className="learning-tabs" role="tablist" aria-label="상담 및 학습 기록 종류">
+              {([["consultations", "상담 기록"], ["mock_exam", "모의고사 성적"], ["vocabulary", "영단어 시험"]] as const).map(([tab, title]) => <button type="button" role="tab" aria-selected={learningTab === tab} className={learningTab === tab ? "learning-tab learning-tab-active" : "learning-tab"} key={tab} onClick={() => { setLearningTab(tab); setError(""); setMessage(""); }}>{title}</button>)}
+            </div>
+          </section>
+          {learningTab === "consultations" && <>
+            <form className="panel learning-form" onSubmit={saveConsultation}>
+              <div className="panel-heading"><div><h2>상담 기록 추가</h2><p>{selectedLearningStudent?.name} 학생과 나눈 상담 내용을 기록합니다.</p></div><MessageSquareText size={19} className="muted-icon" /></div>
+              <div className="form-grid">
+                <Field label="상담 날짜" required><input type="date" required value={consultationForm.date} onChange={(event) => setConsultationForm({ ...consultationForm, date: event.target.value })} /></Field>
+                <Field label="상담 유형" required><select value={consultationForm.category} onChange={(event) => setConsultationForm({ ...consultationForm, category: event.target.value })}>{["학습", "생활", "진로", "학부모", "기타"].map((category) => <option key={category} value={category}>{category} 상담</option>)}</select></Field>
+                <Field label="상담 내용" required><textarea required maxLength={3000} rows={4} value={consultationForm.summary} onChange={(event) => setConsultationForm({ ...consultationForm, summary: event.target.value })} placeholder="학습 상황, 고민, 상담한 내용을 기록해 주세요." /></Field>
+                <Field label="후속 조치"><textarea maxLength={1000} rows={3} value={consultationForm.nextAction} onChange={(event) => setConsultationForm({ ...consultationForm, nextAction: event.target.value })} placeholder="다음 상담 전까지 확인할 내용 (선택)" /></Field>
+              </div>
+              <div className="form-actions"><Button type="submit" disabled={savingLearningRecord}>{savingLearningRecord ? "저장 중..." : "상담 기록 저장"} <Check size={16} /></Button></div>
+            </form>
+            <section className="panel learning-record-panel"><div className="panel-heading"><div><h2>상담 이력</h2><p>{formatNumber(consultations.length)}건의 상담 기록</p></div></div>
+              {consultations.length ? <div className="learning-record-list">{consultations.map((record) => <article className="learning-record" key={record.id}><div className="learning-record-meta"><strong>{dateLabel(record.consultation_date)}</strong><span>{record.category} 상담</span></div><div className="learning-record-content"><p>{record.summary}</p>{record.next_action && <small><b>후속 조치</b> {record.next_action}</small>}</div><button type="button" className="icon-button learning-delete" aria-label="상담 기록 삭제" onClick={() => void deleteLearningRecord("consultations", record.id)}><Trash2 size={16} /></button></article>)}</div> : <Empty title="상담 기록이 없습니다" text="학생 상담을 기록하면 이곳에 날짜별로 쌓입니다." />}
+            </section>
+          </>}
+          {learningTab === "mock_exam" && <>
+            <section className="panel grade-trend-panel"><div className="panel-heading"><div><h2>수능 등급 추이</h2><p>{selectedLearningStudent?.name} 학생의 과목별 모의고사 등급 변화 · 숫자가 낮을수록 높은 등급입니다.</p></div></div><GradeTrendChart assessments={assessments.filter((assessment) => assessment.assessment_type === "mock_exam")} /></section>
+            <form className="panel learning-form" onSubmit={(event) => void saveAssessment(event, "mock_exam")}>
+              <div className="panel-heading"><div><h2>모의고사 성적 입력</h2><p>시험과 과목별 등급을 기록하면 위 그래프에 추이가 표시됩니다.</p></div><BookOpen size={19} className="muted-icon" /></div>
+              <div className="form-grid learning-exam-fields">
+                <Field label="시험 날짜" required><input type="date" required value={mockExamForm.date} onChange={(event) => setMockExamForm({ ...mockExamForm, date: event.target.value })} /></Field>
+                <Field label="시험 이름" required><input required maxLength={120} value={mockExamForm.title} onChange={(event) => setMockExamForm({ ...mockExamForm, title: event.target.value })} placeholder="예: 2027학년도 6월 모의평가" /></Field>
+                <Field label="과목" required><input required maxLength={40} value={mockExamForm.subject} onChange={(event) => setMockExamForm({ ...mockExamForm, subject: event.target.value })} placeholder="예: 국어, 수학, 생활과 윤리" /></Field>
+                <Field label="수능 등급" required><select value={mockExamForm.grade} onChange={(event) => setMockExamForm({ ...mockExamForm, grade: event.target.value })}>{Array.from({ length: 9 }, (_, index) => String(index + 1)).map((grade) => <option key={grade} value={grade}>{grade}등급</option>)}</select></Field>
+                <Field label="원점수 (선택)"><input type="number" min="0" max="100" value={mockExamForm.score} onChange={(event) => setMockExamForm({ ...mockExamForm, score: event.target.value })} placeholder="0~100점" /></Field>
+              </div>
+              <div className="form-actions"><Button type="submit" disabled={savingLearningRecord || !mockExamForm.title.trim()}>{savingLearningRecord ? "저장 중..." : "모의고사 성적 저장"} <Check size={16} /></Button></div>
+            </form>
+            <section className="panel learning-record-panel"><div className="panel-heading"><div><h2>모의고사 성적 이력</h2><p>과목·시험별 등급 및 원점수</p></div></div>
+              {assessments.filter((assessment) => assessment.assessment_type === "mock_exam").length ? <div className="table-wrap"><table><thead><tr><th>시험 날짜</th><th>시험</th><th>과목</th><th>등급</th><th>원점수</th><th></th></tr></thead><tbody>{assessments.filter((assessment) => assessment.assessment_type === "mock_exam").map((record) => <tr key={record.id}><td>{dateLabel(record.assessment_date)}</td><td>{record.title}</td><td>{record.subject}</td><td><span className="grade-pill">{record.grade}등급</span></td><td>{record.score === null ? "—" : `${record.score}점`}</td><td><button type="button" className="icon-button learning-delete" aria-label="모의고사 결과 삭제" onClick={() => void deleteLearningRecord("assessments", record.id)}><Trash2 size={16} /></button></td></tr>)}</tbody></table></div> : <Empty title="모의고사 성적이 없습니다" text="시험 결과를 입력하면 과목별 성적 이력을 확인할 수 있습니다." />}
+            </section>
+          </>}
+          {learningTab === "vocabulary" && <>
+            <section className="panel vocabulary-summary"><div><span>기록된 시험</span><strong>{formatNumber(assessments.filter((assessment) => assessment.assessment_type === "vocabulary").length)}<small>회</small></strong></div><div><span>최근 시험</span><strong>{assessments.find((assessment) => assessment.assessment_type === "vocabulary") ? dateLabel(assessments.find((assessment) => assessment.assessment_type === "vocabulary")!.assessment_date) : "—"}</strong></div><div><span>최근 정답률</span><strong>{(() => { const latest = assessments.find((assessment) => assessment.assessment_type === "vocabulary"); return latest?.max_score ? `${Math.round((latest.score ?? 0) * 100 / latest.max_score)}%` : "—"; })()}</strong></div></section>
+            <form className="panel learning-form" onSubmit={(event) => void saveAssessment(event, "vocabulary")}>
+              <div className="panel-heading"><div><h2>영단어 시험 결과 입력</h2><p>학생용 앱 연동 전까지는 학원장·관리자가 결과를 대신 기록할 수 있습니다.</p></div><BookOpen size={19} className="muted-icon" /></div>
+              <div className="form-grid">
+                <Field label="시험 날짜" required><input type="date" required value={vocabularyForm.date} onChange={(event) => setVocabularyForm({ ...vocabularyForm, date: event.target.value })} /></Field>
+                <Field label="시험 이름"><input maxLength={120} value={vocabularyForm.title} onChange={(event) => setVocabularyForm({ ...vocabularyForm, title: event.target.value })} placeholder="예: Day 12 단어 시험" /></Field>
+                <Field label="맞힌 개수" required><input type="number" min="0" max="1000" required value={vocabularyForm.score} onChange={(event) => setVocabularyForm({ ...vocabularyForm, score: event.target.value })} /></Field>
+                <Field label="전체 문항 수" required><input type="number" min="1" max="1000" required value={vocabularyForm.maxScore} onChange={(event) => setVocabularyForm({ ...vocabularyForm, maxScore: event.target.value })} /></Field>
+              </div>
+              <div className="form-actions"><Button type="submit" disabled={savingLearningRecord}>{savingLearningRecord ? "저장 중..." : "영단어 결과 저장"} <Check size={16} /></Button></div>
+            </form>
+            <section className="panel learning-record-panel"><div className="panel-heading"><div><h2>영단어 시험 이력</h2><p>날짜별 정답 개수와 정답률을 확인합니다.</p></div></div>
+              {assessments.filter((assessment) => assessment.assessment_type === "vocabulary").length ? <div className="table-wrap"><table><thead><tr><th>날짜</th><th>시험</th><th>결과</th><th>정답률</th><th></th></tr></thead><tbody>{assessments.filter((assessment) => assessment.assessment_type === "vocabulary").map((record) => <tr key={record.id}><td>{dateLabel(record.assessment_date)}</td><td>{record.title || "영단어 시험"}</td><td>{record.score} / {record.max_score}</td><td>{record.max_score ? `${Math.round((record.score ?? 0) * 100 / record.max_score)}%` : "—"}</td><td><button type="button" className="icon-button learning-delete" aria-label="영단어 결과 삭제" onClick={() => void deleteLearningRecord("assessments", record.id)}><Trash2 size={16} /></button></td></tr>)}</tbody></table></div> : <Empty title="영단어 시험 기록이 없습니다" text="매일 본 시험의 맞힌 개수와 전체 문항 수를 기록해 보세요." />}
+            </section>
+          </>}
+        </>}
+      </>}
+      {(["schedule", "academy", "staff", "permissions"] as Page[]).includes(page) && <><PageHeading eyebrow={page === "schedule" ? "CLASS MANAGEMENT" : "ACADEMY SETTINGS"} title={labels[page]} description="논의한 기능을 차근차근 연결하고 있습니다." /><section className="panel placeholder-panel"><Empty title={`${labels[page]} 기능을 준비하고 있어요`} text="이 화면은 메뉴 구성 확인을 위한 자리입니다. 실제 데이터 저장이나 업무 처리는 아직 지원하지 않습니다." /><div className="placeholder-info"><CircleAlert size={17} /><span>{page === "schedule" ? "수업 일정과 휴강 처리 방식은 아직 정해지지 않았습니다." : "계정, 학원별 데이터 분리, 직원 권한은 아직 연결되지 않았습니다."}</span></div></section></>}
       <footer className="footer"><Logo /><span>학원 관리의 시작, 유클리온과 함께.</span><small>로그인 후 학원 데이터 관리</small></footer>
     </main>
   </div>;
@@ -1140,4 +1358,62 @@ function Dashboard({ academy, user }: {
 function StudentTable({ students, classNames, select }: { students: Student[]; classNames: (ids: string[]) => string; select: (id: string) => void }) {
   if (!students.length) return <Empty title="학생이 없습니다" text="검색 조건을 변경하거나 새로운 학생을 등록해 보세요." />;
   return <div className="table-wrap"><table><thead><tr><th>학생</th><th>성별</th><th>학교</th><th>학년·수험 상태</th><th>수강 반</th><th>등록일</th><th>상태</th><th><span className="sr-only">상세</span></th></tr></thead><tbody>{students.map((s) => <tr key={s.id}><td><button className="table-person" onClick={() => select(s.id)}><span className="person-avatar">{s.name.slice(0, 1)}</span><span><strong>{s.name}</strong><small>{s.phone}</small></span></button></td><td>{s.gender === "male" ? "남학생" : s.gender === "female" ? "여학생" : "미지정"}</td><td>{s.school || "—"}</td><td>{s.grade || "—"}</td><td>{classNames(s.classes) || "—"}</td><td>{dateLabel(s.enrolled)}</td><td><span className={`status-pill ${s.status === "재원" ? "active" : ""}`}>{s.status}</span></td><td><button className="table-arrow" onClick={() => select(s.id)} aria-label={`${s.name} 상세 보기`}><ChevronRight size={17} /></button></td></tr>)}</tbody></table></div>;
+}
+
+function GradeTrendChart({ assessments }: { assessments: AssessmentRecord[] }) {
+  const mockExams = assessments.filter(
+    (assessment) => assessment.assessment_type === "mock_exam" && assessment.grade !== null,
+  );
+  const sessions = [...new Map(
+    mockExams.map((assessment) => [
+      `${assessment.assessment_date}|${assessment.title}`,
+      { date: assessment.assessment_date, title: assessment.title },
+    ]),
+  ).values()].sort((a, b) =>
+    a.date.localeCompare(b.date) || a.title.localeCompare(b.title, "ko"),
+  ).slice(-8);
+  const visibleKeys = new Set(sessions.map(({ date, title }) => `${date}|${title}`));
+  const visibleExams = mockExams.filter(
+    (assessment) => visibleKeys.has(`${assessment.assessment_date}|${assessment.title}`),
+  );
+  const subjects = [...new Set(visibleExams.map((assessment) => assessment.subject))];
+  if (!sessions.length) {
+    return <Empty title="아직 표시할 성적이 없습니다" text="모의고사 성적을 입력하면 최대 8회차까지 등급 변화가 표시됩니다." />;
+  }
+
+  const width = Math.max(520, sessions.length * 90 + 80);
+  const x = (index: number) => sessions.length === 1
+    ? width / 2
+    : 48 + index * (width - 96) / (sessions.length - 1);
+  const y = (grade: number) => 18 + (grade - 1) * 21;
+  const colors: Record<string, string> = {
+    국어: "#2f8059", 수학: "#397bb8", 영어: "#bd6a3b",
+    한국사: "#9068ae",
+  };
+  const palette = ["#c19732", "#c55672", "#438b8b", "#9a7046"];
+
+  return <div className="grade-chart-scroll">
+    <svg className="grade-chart" viewBox={`0 0 ${width} 226`} role="img" aria-label="모의고사 과목별 수능 등급 추이">
+      {Array.from({ length: 9 }, (_, index) => {
+        const grade = index + 1;
+        const position = y(grade);
+        return <g key={grade}><line x1="38" x2={width - 12} y1={position} y2={position} className="grade-chart-grid" /><text x="22" y={position + 4} className="grade-chart-axis">{grade}</text></g>;
+      })}
+      {subjects.map((subject) => {
+        const points = visibleExams.flatMap((assessment) => {
+          if (assessment.subject !== subject || assessment.grade === null) return [];
+          const index = sessions.findIndex(
+            (session) => session.date === assessment.assessment_date && session.title === assessment.title,
+          );
+          return index < 0 ? [] : [{ x: x(index), y: y(assessment.grade), assessment }];
+        }).sort((a, b) => a.x - b.x);
+        if (!points.length) return null;
+        const color = colors[subject] ?? palette[subjects.indexOf(subject) % palette.length];
+        return <g key={subject}><polyline points={points.map((point) => `${point.x},${point.y}`).join(" ")} fill="none" stroke={color} strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />{points.map(({ x: pointX, y: pointY, assessment }) => <circle cx={pointX} cy={pointY} r="4" fill={color} key={assessment.id}><title>{`${assessment.title} · ${assessment.subject} ${assessment.grade}등급`}</title></circle>)}</g>;
+      })}
+      {sessions.map((session, index) => <text key={`${session.date}|${session.title}`} x={x(index)} y="216" textAnchor="middle" className="grade-chart-date">{session.date.slice(5).replace("-", ".")}</text>)}
+    </svg>
+    <div className="grade-chart-legend">{subjects.map((subject) => <span key={subject}><i style={{ backgroundColor: colors[subject] ?? palette[subjects.indexOf(subject) % palette.length] }} />{subject}</span>)}</div>
+    <p className="grade-chart-note">1등급에 가까울수록 그래프 위쪽에 표시됩니다. 날짜가 같은 시험은 시험명 기준으로 회차를 나눕니다.</p>
+  </div>;
 }
