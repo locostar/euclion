@@ -51,6 +51,7 @@ export const studentInput = z.object({
   birthDate: optionalText(10),
   phone: optionalText(30),
   guardianPhone: optionalText(30),
+  gender: z.enum(["male", "female"]),
   school: optionalText(120),
   grade: optionalText(40),
   graduatedSchool: optionalText(120),
@@ -122,9 +123,8 @@ export const seatAssignmentInput = z.object({
   studentId: z.string().min(1).max(80),
 });
 
-export const seatStatusInput = z.object({
-  seatId: z.string().min(1).max(80),
-  status: z.enum(["present", "absent", "in_use", "exited"]),
+export const seatScanInput = z.object({
+  studentId: z.string().min(1).max(80),
 });
 
 export function isJsonParseResult<T extends z.ZodType>(

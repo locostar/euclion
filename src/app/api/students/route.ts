@@ -11,6 +11,7 @@ type StudentRow = {
   birth_date: string | null;
   phone: string | null;
   guardian_phone: string | null;
+  gender: "male" | "female" | null;
   school: string | null;
   grade: string | null;
   graduated_school: string | null;
@@ -45,7 +46,7 @@ export async function GET(request: Request) {
 
   const rows = await result.context.env.DB.prepare(
     `SELECT s.id, s.name, s.birth_date, s.phone, s.guardian_phone,
-            s.school, s.grade, s.graduated_school, s.address,
+            s.gender, s.school, s.grade, s.graduated_school, s.address,
             s.enrolled_on, s.status, s.memo,
             cs.class_id
      FROM students s
@@ -70,6 +71,7 @@ export async function GET(request: Request) {
       birth_date: row.birth_date,
       phone: row.phone,
       guardian_phone: row.guardian_phone,
+      gender: row.gender,
       school: row.school,
       grade: row.grade,
       graduated_school: row.graduated_school,
@@ -105,9 +107,9 @@ export async function POST(request: Request) {
   const statements = [
     result.context.env.DB.prepare(
       `INSERT INTO students
-        (id, organization_id, name, birth_date, phone, guardian_phone,
+        (id, organization_id, name, birth_date, phone, guardian_phone, gender,
          school, grade, graduated_school, address, enrolled_on, status, memo)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?)`,
     ).bind(
       id,
       result.context.organizationId,
@@ -115,6 +117,7 @@ export async function POST(request: Request) {
       student.birthDate,
       student.phone,
       student.guardianPhone,
+      student.gender,
       student.school,
       student.grade,
       student.graduatedSchool,

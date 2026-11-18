@@ -21,12 +21,27 @@ export async function PATCH(request: Request, { params }: RouteContext) {
   }
 
   const existing = await result.context.env.DB.prepare(
-    "SELECT id FROM students WHERE id = ? AND organization_id = ? LIMIT 1",
+    `SELECT s.id, so.room_number
+     FROM students s
+     LEFT JOIN seat_occupancy so
+       ON so.student_id = s.id AND so.organization_id = s.organization_id
+     WHERE s.id = ? AND s.organization_id = ? LIMIT 1`,
   )
     .bind(id, result.context.organizationId)
-    .first<{ id: string }>();
+    .first<{ id: string; room_number: number | null }>();
   if (!existing) {
     return apiError(404, "STUDENT_NOT_FOUND", "학생을 찾을 수 없습니다.");
+  }
+
+  if (
+    existing.room_number !== null &&
+    (existing.room_number % 2 === 1 ? "male" : "female") !== student.gender
+  ) {
+    return apiError(
+      409,
+      "SEAT_GENDER_MISMATCH",
+      "배정된 방의 성별과 다릅니다. 좌석을 변경한 뒤 성별을 수정해 주세요.",
+    );
   }
 
   if (new Set(student.classIds).size !== student.classIds.length) {
@@ -48,7 +63,7 @@ export async function PATCH(request: Request, { params }: RouteContext) {
   const statements = [
     result.context.env.DB.prepare(
       `UPDATE students
-       SET name = ?, birth_date = ?, phone = ?, guardian_phone = ?,
+       SET name = ?, birth_date = ?, phone = ?, guardian_phone = ?, gender = ?,
            school = ?, grade = ?, graduated_school = ?, address = ?,
            enrolled_on = ?, status = ?, memo = ?,
            updated_at = cast(unixepoch('subsecond') * 1000 as integer)
@@ -58,6 +73,7 @@ export async function PATCH(request: Request, { params }: RouteContext) {
       student.birthDate,
       student.phone,
       student.guardianPhone,
+      student.gender,
       student.school,
       student.grade,
       student.graduatedSchool,
@@ -69,19 +85,24 @@ export async function PATCH(request: Request, { params }: RouteContext) {
       result.context.organizationId,
     ),
     result.context.env.DB.prepare(
-      "DELETE FROM class_students WHERE student_id = ? AND organization_id = ?",
-    ).bind(id, result.context.organizationId),
-    result.context.env.DB.prepare(
       `DELETE FROM seat_occupancy
        WHERE student_id = ? AND organization_id = ? AND ? = 'withdrawn'`,
     ).bind(id, result.context.organizationId, student.status ?? "active"),
-    ...student.classIds.map((classId) =>
-      result.context.env.DB.prepare(
-        `INSERT INTO class_students (organization_id, class_id, student_id)
-         VALUES (?, ?, ?)`,
-      ).bind(result.context.organizationId, classId, id),
-    ),
   ];
+
+  if ((student.status ?? "active") === "active") {
+    statements.push(
+      result.context.env.DB.prepare(
+        "DELETE FROM class_students WHERE student_id = ? AND organization_id = ?",
+      ).bind(id, result.context.organizationId),
+      ...student.classIds.map((classId) =>
+        result.context.env.DB.prepare(
+          `INSERT INTO class_students (organization_id, class_id, student_id)
+           VALUES (?, ?, ?)`,
+        ).bind(result.context.organizationId, classId, id),
+      ),
+    );
+  }
 
   await result.context.env.DB.batch(statements);
   return apiJson({ id });

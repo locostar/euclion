@@ -22,6 +22,7 @@ export const students = sqliteTable(
     birthDate: text("birth_date"),
     phone: text("phone"),
     guardianPhone: text("guardian_phone"),
+    gender: text("gender", { enum: ["male", "female"] }),
     school: text("school"),
     grade: text("grade"),
     graduatedSchool: text("graduated_school"),
@@ -214,6 +215,7 @@ export const seatOccupancy = sqliteTable(
     status: text("status", {
       enum: ["present", "absent", "in_use", "exited"],
     }).notNull().default("in_use"),
+    totalDurationMs: integer("total_duration_ms").notNull().default(0),
     enteredAt: integer("entered_at", { mode: "timestamp_ms" }).notNull(),
     isDemo: integer("is_demo", { mode: "boolean" }).notNull().default(false),
   },

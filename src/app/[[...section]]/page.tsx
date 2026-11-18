@@ -6,13 +6,14 @@ import {
   Menu, MessageSquareText, Plus, Search, Sparkles,
   UsersRound, WalletCards, X,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState, useSyncExternalStore, type FormEvent, type ReactNode } from "react";
-import { AuthGate } from "./auth-gate";
+import { usePathname, useRouter } from "next/navigation";
+import { startTransition, useCallback, useEffect, useMemo, useState, useSyncExternalStore, type FormEvent, type ReactNode } from "react";
+import { AuthGate } from "../auth-gate";
 import { authClient } from "@/lib/auth-client";
 
-type Page = "dashboard" | "students" | "student-new" | "consultations" | "classes" | "class-new" | "schedule" | "attendance" | "attendance-list" | "seats" | "billing" | "billing-settings" | "payments" | "academy" | "staff" | "permissions";
+type Page = "dashboard" | "students" | "withdrawn-students" | "student-new" | "consultations" | "classes" | "class-new" | "schedule" | "attendance" | "attendance-list" | "seats" | "billing" | "billing-settings" | "payments" | "academy" | "staff" | "permissions";
 type Student = {
-  id: string; name: string; birth: string; phone: string; guardian: string;
+  id: string; name: string; birth: string; phone: string; guardian: string; gender: "male" | "female" | "";
   school: string; grade: string; graduatedSchool: string; address: string; enrolled: string; classes: string[];
   memo: string; status: "재원" | "퇴원";
 };
@@ -22,14 +23,14 @@ type AttendanceEntry = { status: AttendanceStatus; memo: string };
 type Attendance = Record<string, AttendanceEntry>;
 
 const menus: { label: string; items: [string, Page][] }[] = [
-  { label: "학생 관리", items: [["학생 목록", "students"], ["신규 학생 등록", "student-new"], ["상담 기록", "consultations"]] },
+  { label: "학생 관리", items: [["학생 목록", "students"], ["퇴원 학생", "withdrawn-students"], ["신규 학생 등록", "student-new"], ["상담 기록", "consultations"]] },
   { label: "수업 관리", items: [["반 목록", "classes"], ["반 등록", "class-new"], ["수업 일정", "schedule"]] },
   { label: "출결 관리", items: [["출결 입력", "attendance"], ["출결 조회", "attendance-list"]] },
   { label: "수강료 관리", items: [["청구 내역", "billing"], ["정기 청구 설정", "billing-settings"], ["납부 내역", "payments"]] },
   { label: "학원 관리", items: [["학원 정보", "academy"], ["직원 관리", "staff"], ["직원별 권한", "permissions"]] },
 ];
 const labels: Record<Page, string> = {
-  dashboard: "대시보드", students: "학생 목록", "student-new": "신규 학생 등록", consultations: "상담 기록",
+  dashboard: "대시보드", students: "학생 목록", "withdrawn-students": "퇴원 학생", "student-new": "신규 학생 등록", consultations: "상담 기록",
   classes: "반 목록", "class-new": "반 등록", schedule: "수업 일정", attendance: "출결 입력",
   "attendance-list": "출결 조회", seats: "좌석 배치도", billing: "청구 내역", "billing-settings": "정기 청구 설정",
   payments: "납부·환불 내역", academy: "학원 정보", staff: "직원 관리", permissions: "직원별 권한",
@@ -40,12 +41,45 @@ const today = () => {
 };
 const dateLabel = (value: string) => value.replaceAll("-", ".");
 const formatNumber = (value: number) => value.toLocaleString("ko-KR");
-const emptyStudent = (): Omit<Student, "id" | "status"> => ({ name: "", birth: "", phone: "", guardian: "", school: "", grade: "", graduatedSchool: "", address: "", enrolled: "", classes: [], memo: "" });
+const emptyStudent = (): Omit<Student, "id" | "status"> => ({ name: "", birth: "", phone: "", guardian: "", gender: "", school: "", grade: "", graduatedSchool: "", address: "", enrolled: "", classes: [], memo: "" });
 const emptyClass = (): Omit<ClassRoom, "id"> => ({ name: "", subject: "", teacher: "", grade: "", capacity: "", room: "", start: "", end: "", memo: "" });
 const subscribeDate = (callback: () => void) => {
   const timer = window.setInterval(callback, 60_000);
   return () => window.clearInterval(timer);
 };
+
+function routePage(pathname: string): Page {
+  const [section, detail, action] = pathname.split("/").filter(Boolean);
+  if (!section) return "dashboard";
+  if (section === "students") {
+    if (detail === "new") return "student-new";
+    if (detail === "withdrawn") return "withdrawn-students";
+    if (action === "edit") return "student-new";
+    return "students";
+  }
+  if (section === "classes" && detail === "new") return "class-new";
+  if (section === "attendance" && detail === "history") return "attendance-list";
+  if (section === "billing" && detail === "settings") return "billing-settings";
+  if ((["consultations", "classes", "schedule", "attendance", "seats", "billing", "payments", "academy", "staff", "permissions"] as string[]).includes(section)) {
+    return section as Page;
+  }
+  return "dashboard";
+}
+
+function pagePath(page: Page, studentId: string | null = null, editingId: string | null = null) {
+  if (page === "dashboard") return "/";
+  if (page === "students" && studentId) return `/students/${encodeURIComponent(studentId)}`;
+  if (page === "student-new") {
+    return editingId
+      ? `/students/${encodeURIComponent(editingId)}/edit`
+      : "/students/new";
+  }
+  if (page === "withdrawn-students") return "/students/withdrawn";
+  if (page === "class-new") return "/classes/new";
+  if (page === "attendance-list") return "/attendance/history";
+  if (page === "billing-settings") return "/billing/settings";
+  return `/${page}`;
+}
 
 function Logo() {
   return <div className="brand"><span className="brand-mark"><span /></span><span>euclion<span className="brand-dot">.</span></span></div>;
@@ -73,6 +107,7 @@ type StudentApi = {
   birth_date: string | null;
   phone: string | null;
   guardian_phone: string | null;
+  gender: "male" | "female" | null;
   school: string | null;
   grade: string | null;
   graduated_school: string | null;
@@ -121,8 +156,10 @@ type SeatOccupancy = {
   student_name: string;
   school: string | null;
   grade: string | null;
+  gender: "male" | "female" | null;
   status: "present" | "absent" | "in_use" | "exited";
   entered_at: number;
+  total_duration_ms: number;
   is_demo: boolean;
 };
 
@@ -142,6 +179,7 @@ function toStudent(row: StudentApi): Student {
     birth: row.birth_date ?? "",
     phone: row.phone ?? "",
     guardian: row.guardian_phone ?? "",
+    gender: row.gender ?? "",
     school: row.school ?? "",
     grade: row.grade ?? "",
     graduatedSchool: row.graduated_school ?? "",
@@ -163,6 +201,12 @@ function formatDuration(enteredAt: number, now: number) {
   const minutes = Math.max(0, Math.floor((now - enteredAt) / 60_000));
   const hours = Math.floor(minutes / 60);
   return `${hours}시간 ${minutes % 60}분`;
+}
+
+function daysUntilDue(dueDate: string, todayDate: string) {
+  const due = Date.parse(`${dueDate}T00:00:00Z`);
+  const today = Date.parse(`${todayDate}T00:00:00Z`);
+  return Math.round((due - today) / 86_400_000);
 }
 
 function toClassroom(row: ClassApi): ClassRoom {
@@ -206,17 +250,17 @@ function Dashboard({ academy, user }: {
   academy: { id: string; name: string; role: string };
   user: { name: string; email: string };
 }) {
+  const pathname = usePathname();
+  const router = useRouter();
   const currentDate = useSyncExternalStore(subscribeDate, today, () => "");
-  const [page, setPage] = useState<Page>("dashboard");
+  const page = routePage(pathname);
   const [students, setStudents] = useState<Student[]>([]);
   const [classes, setClasses] = useState<ClassRoom[]>([]);
   const [attendance, setAttendance] = useState<Attendance>({});
-  const [selectedStudent, setSelectedStudent] = useState<string | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
   const [studentForm, setStudentForm] = useState(emptyStudent);
   const [classForm, setClassForm] = useState(emptyClass);
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState("전체 상태");
   const [classFilter, setClassFilter] = useState("전체 반");
   const [attendanceDate, setAttendanceDate] = useState("");
   const [attendanceClass, setAttendanceClass] = useState("");
@@ -247,6 +291,9 @@ function Dashboard({ academy, user }: {
   const billingQueryPeriod = page === "dashboard"
     ? currentDate.slice(0, 7)
     : billingPeriod || currentDate.slice(0, 7);
+  const selectedSeatGender = selectedSeat
+    ? selectedSeat.roomNumber % 2 === 1 ? "male" : "female"
+    : null;
 
   const reloadData = useCallback(async () => {
     try {
@@ -269,7 +316,11 @@ function Dashboard({ academy, user }: {
   }, [reloadData]);
 
   useEffect(() => {
-    if (!selectedDate || !attendanceClass) {
+    if (
+      !["attendance", "attendance-list"].includes(page) ||
+      !selectedDate ||
+      !attendanceClass
+    ) {
       return;
     }
 
@@ -294,10 +345,13 @@ function Dashboard({ academy, user }: {
     });
 
     return () => { active = false; };
-  }, [selectedDate, attendanceClass]);
+  }, [page, selectedDate, attendanceClass]);
 
   useEffect(() => {
-    if (!billingQueryPeriod) return;
+    if (
+      !["dashboard", "billing", "payments"].includes(page) ||
+      !billingQueryPeriod
+    ) return;
 
     let active = true;
     requestJson<BillingCharge[]>(
@@ -314,7 +368,7 @@ function Dashboard({ academy, user }: {
     });
 
     return () => { active = false; };
-  }, [billingQueryPeriod]);
+  }, [page, billingQueryPeriod]);
 
   const reloadSeats = useCallback(async () => {
     const rows = await requestJson<SeatOccupancy[]>("/api/seats");
@@ -325,14 +379,16 @@ function Dashboard({ academy, user }: {
   useEffect(() => {
     if (page !== "seats") return;
     let active = true;
-    const timer = window.setTimeout(() => {
+    const refresh = () => {
       reloadSeats().catch((caught: unknown) => {
         if (active) {
           setDataError(caught instanceof Error ? caught.message : "좌석 현황을 불러오지 못했습니다.");
         }
       });
-    }, 0);
-    return () => { active = false; window.clearTimeout(timer); };
+    };
+    refresh();
+    const timer = window.setInterval(refresh, 5_000);
+    return () => { active = false; window.clearInterval(timer); };
   }, [page, reloadSeats]);
 
   useEffect(() => {
@@ -340,21 +396,59 @@ function Dashboard({ academy, user }: {
     return () => window.clearInterval(timer);
   }, []);
 
-  const go = (next: Page) => { setPage(next); setSelectedStudent(null); setMobileOpen(false); setNoticeOpen(false); setError(""); setMessage(""); };
+  const [routeSection, routeStudentId, routeAction] = pathname.split("/").filter(Boolean);
+  const selectedStudentId =
+    routeSection === "students" &&
+    routeStudentId &&
+    routeStudentId !== "new" &&
+    routeStudentId !== "withdrawn" &&
+    routeAction !== "edit"
+      ? decodeURIComponent(routeStudentId)
+      : null;
+  const routeEditingStudent =
+    routeSection === "students" && routeAction === "edit"
+      ? students.find((student) => student.id === decodeURIComponent(routeStudentId ?? ""))
+      : undefined;
+
+  useEffect(() => {
+    if (!routeEditingStudent || editing === routeEditingStudent.id) return;
+    const { id, status: _status, ...form } = routeEditingStudent;
+    void _status;
+    startTransition(() => {
+      setStudentForm(form);
+      setEditing(id);
+    });
+  }, [routeEditingStudent, editing]);
+
+  const go = (next: Page) => {
+    router.push(pagePath(next), { scroll: false });
+    setMobileOpen(false);
+    setNoticeOpen(false);
+    setError("");
+    setMessage("");
+  };
+  const showStudent = (id: string) => {
+    router.push(pagePath("students", id), { scroll: false });
+    setMobileOpen(false);
+    setError("");
+    setMessage("");
+  };
   const startNewStudent = () => { setStudentForm({ ...emptyStudent(), enrolled: today() }); setEditing(null); go("student-new"); };
   const classNames = (ids: string[]) => ids.map((id) => classes.find((item) => item.id === id)?.name).filter(Boolean).join(", ");
   const activeStudents = students.filter((s) => s.status === "재원");
   const seatedStudentIds = new Set(seatOccupancies.flatMap((seat) => seat.student_id ? [seat.student_id] : []));
-  const unseatedStudents = activeStudents.filter((student) => !seatedStudentIds.has(student.id));
+  const unseatedStudents = activeStudents.filter(
+    (student) => !seatedStudentIds.has(student.id) && student.gender === selectedSeatGender,
+  );
   const shownStudents = useMemo(() => {
     const term = search.trim().toLowerCase();
     return students.filter((s) => {
-      const text = [s.name, s.phone, s.guardian, s.school, s.grade, s.enrolled, ...s.classes.map((id) => classes.find((c) => c.id === id)?.name ?? "")].join(" ").toLowerCase();
-      return (!term || text.includes(term)) && (statusFilter === "전체 상태" || s.status === statusFilter) && (classFilter === "전체 반" || s.classes.includes(classFilter));
+      const text = [s.name, s.phone, s.guardian, s.gender, s.school, s.grade, s.enrolled, ...s.classes.map((id) => classes.find((c) => c.id === id)?.name ?? "")].join(" ").toLowerCase();
+      return (!term || text.includes(term)) && (classFilter === "전체 반" || s.classes.includes(classFilter));
     });
-  }, [students, classes, search, statusFilter, classFilter]);
+  }, [students, classes, search, classFilter]);
   const todayEntries = Object.entries(attendance).filter(([key]) => key.startsWith(`${selectedDate}|`));
-  const selected = students.find((s) => s.id === selectedStudent);
+  const selected = students.find((s) => s.id === selectedStudentId);
 
   async function saveStudent(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -369,6 +463,7 @@ function Dashboard({ academy, user }: {
         birthDate: studentForm.birth,
         phone: studentForm.phone,
         guardianPhone: studentForm.guardian,
+        gender: studentForm.gender,
         school: studentForm.school,
         grade: studentForm.grade,
         graduatedSchool: studentForm.graduatedSchool,
@@ -387,7 +482,9 @@ function Dashboard({ academy, user }: {
         },
       );
       await reloadData();
-      setEditing(null); setSelectedStudent(saved.id); setPage("students"); setMessage("학생 정보를 저장했습니다.");
+      setEditing(null);
+      router.push(pagePath("students", saved.id), { scroll: false });
+      setMessage("학생 정보를 저장했습니다.");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "학생 정보를 저장하지 못했습니다.");
     }
@@ -395,7 +492,40 @@ function Dashboard({ academy, user }: {
   function editStudent(student: Student) {
     const { id, status: _status, ...form } = student;
     void _status;
-    setStudentForm(form); setEditing(id); setPage("student-new"); setSelectedStudent(null); setMessage("");
+    setStudentForm(form);
+    setEditing(id);
+    setMessage("");
+    router.push(pagePath("student-new", null, id), { scroll: false });
+  }
+  async function updateStudentStatus(student: Student, status: "active" | "withdrawn") {
+    if (status === "withdrawn" && !window.confirm(`${student.name} 학생을 퇴원 처리할까요? 배정된 좌석은 자동으로 비워집니다.`)) return;
+    setError("");
+    setMessage("");
+    try {
+      await requestJson<{ id: string }>(`/api/students/${encodeURIComponent(student.id)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: student.name,
+          birthDate: student.birth,
+          phone: student.phone,
+          guardianPhone: student.guardian,
+          gender: student.gender,
+          school: student.school,
+          grade: student.grade,
+          graduatedSchool: student.graduatedSchool,
+          address: student.address,
+          enrolledOn: student.enrolled,
+          status,
+          memo: student.memo,
+          classIds: student.classes,
+        }),
+      });
+      await reloadData();
+      setMessage(status === "withdrawn" ? "학생을 퇴원 처리하고 좌석을 비웠습니다." : "학생을 재원 상태로 복귀시켰습니다.");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "학생 상태를 변경하지 못했습니다.");
+    }
   }
   async function saveClass(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -535,39 +665,15 @@ function Dashboard({ academy, user }: {
       await reloadSeats();
       setSelectedSeat(null);
       setSeatStudentId("");
-      setMessage("좌석을 배정하고 입실 시각을 기록했습니다.");
+      setMessage("좌석을 배정했습니다. 출입 상태는 지문 스캔 연동 시 자동 반영됩니다.");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "좌석을 배정하지 못했습니다.");
     } finally {
       setSavingSeat(false);
     }
   }
-  async function clearSeat(seat: SeatOccupancy) {
-    setError("");
-    try {
-      await requestJson<{ cleared: boolean }>(
-        `/api/seats?seatId=${encodeURIComponent(seat.id)}`,
-        { method: "DELETE" },
-      );
-      await reloadSeats();
-      setMessage(`${seat.student_name} 학생의 좌석을 비웠습니다.`);
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "좌석을 비우지 못했습니다.");
-    }
-  }
-  async function updateSeatStatus(seat: SeatOccupancy, status: SeatOccupancy["status"]) {
-    setError("");
-    try {
-      await requestJson<{ updated: boolean }>("/api/seats", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ seatId: seat.id, status }),
-      });
-      await reloadSeats();
-      setMessage(`${seat.student_name} 학생 상태를 ${seatStatusLabels[status]}으로 변경했습니다.`);
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "좌석 상태를 변경하지 못했습니다.");
-    }
+  function showParentReminderNotConnected() {
+    setMessage("카카오톡 연동 전이라 보호자 알림은 발송되지 않았습니다.");
   }
   async function changeDemoSeats(action: "add" | "remove") {
     setSavingDemo(true);
@@ -626,14 +732,16 @@ function Dashboard({ academy, user }: {
           </div></section>
           <section className="panel"><div className="panel-heading"><div><h2>알림과 할 일</h2><p>놓치지 않도록 한곳에서 확인해요.</p></div><Bell size={18} className="muted-icon" /></div><div className="dashboard-empty"><span><Check size={22} /></span><strong>아직 표시할 알림이 없어요</strong><p>실제 알림 기능은 준비 중입니다.</p></div></section>
         </div>
-        <section className="panel recent-panel"><div className="panel-heading"><div><h2>학생 현황</h2><p>등록된 학생 목록을 확인해 보세요.</p></div><button className="text-link" onClick={() => go("students")}>전체 보기 <ArrowRight size={15} /></button></div><StudentTable students={students.slice(0, 4)} classNames={classNames} select={(id) => { setPage("students"); setSelectedStudent(id); }} /></section>
+        <section className="panel recent-panel"><div className="panel-heading"><div><h2>학생 현황</h2><p>등록된 학생 목록을 확인해 보세요.</p></div><button className="text-link" onClick={() => go("students")}>전체 보기 <ArrowRight size={15} /></button></div><StudentTable students={activeStudents.slice(0, 4)} classNames={classNames} select={showStudent} /></section>
       </>}
 
-      {page === "students" && selected && <><button className="back-link" onClick={() => setSelectedStudent(null)}><ArrowLeft size={16} /> 학생 목록으로</button><PageHeading eyebrow="STUDENT MANAGEMENT" title={selected.name} description={`${selected.status} · 등록일 ${dateLabel(selected.enrolled)}`} action={<Button variant="outline" onClick={() => editStudent(selected)}>정보 수정</Button>} />{message && <div className="success-message">{message}</div>}<div className="panel detail-panel"><h2>학생 기본 정보</h2><div className="detail-grid">{[["이름", selected.name], ["생년월일", selected.birth], ["학생 연락처", selected.phone], ["보호자 연락처", selected.guardian], ["학교", selected.school], ["학년·수험 상태", selected.grade], ...(selected.graduatedSchool ? [["졸업 고등학교", selected.graduatedSchool]] : []), ["주소", selected.address], ["등록일", selected.enrolled], ["수강 반", classNames(selected.classes) || "없음"], ["메모", selected.memo]].map(([label, value]) => <div key={label}><span>{label}</span><strong>{value}</strong></div>)}</div></div><div className="detail-note"><CircleAlert size={17} /> 출결 자동화는 지문 인식기 연동 후 제공할 예정입니다.</div></>}
-      {page === "students" && !selected && <><PageHeading eyebrow="STUDENT MANAGEMENT" title="학생 관리" description="학교와 학년·수험 상태를 나누어 관리합니다." action={<Button onClick={startNewStudent}><Plus size={17} /> 신규 학생 등록</Button>} />{message && <div className="success-message">{message}</div>}<section className="panel list-panel"><div className="list-heading"><div><h2>전체 학생 <span>{formatNumber(shownStudents.length)}</span></h2><p>학생을 선택하면 상세 정보를 볼 수 있습니다.</p></div></div><div className="filters"><label className="search-field"><Search size={17} /><input placeholder="이름, 연락처, 학교, 학년, 등록일 검색" value={search} onChange={(e) => setSearch(e.target.value)} aria-label="학생 검색" /></label><select aria-label="재원 상태" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}><option>전체 상태</option><option>재원</option><option>퇴원</option></select><select aria-label="수강 반" value={classFilter} onChange={(e) => setClassFilter(e.target.value)}><option>전체 반</option>{classes.map((c) => <option value={c.id} key={c.id}>{c.name}</option>)}</select></div><StudentTable students={shownStudents} classNames={classNames} select={(id) => setSelectedStudent(id)} /></section></>}
+      {page === "students" && selected && <><button className="back-link" onClick={() => go("students")}><ArrowLeft size={16} /> 학생 목록으로</button><PageHeading eyebrow="STUDENT MANAGEMENT" title={selected.name} description={`${selected.status} · 등록일 ${dateLabel(selected.enrolled)}`} action={<div className="student-detail-actions"><Button variant="outline" onClick={() => editStudent(selected)}>정보 수정</Button>{selected.status === "재원" ? <Button variant="outline" onClick={() => void updateStudentStatus(selected, "withdrawn")}>퇴원 처리</Button> : <Button onClick={() => void updateStudentStatus(selected, "active")}>재원 복귀</Button>}</div>} />{message && <div className="success-message">{message}</div>}{error && <p className="error-message" role="alert">{error}</p>}<div className="panel detail-panel"><h2>학생 기본 정보</h2><div className="detail-grid">{[["이름", selected.name], ["성별", selected.gender === "male" ? "남학생" : selected.gender === "female" ? "여학생" : "미지정"], ["생년월일", selected.birth], ["학생 연락처", selected.phone], ["보호자 연락처", selected.guardian], ["학교", selected.school], ["학년·수험 상태", selected.grade], ...(selected.graduatedSchool ? [["졸업 고등학교", selected.graduatedSchool]] : []), ["주소", selected.address], ["등록일", selected.enrolled], ["수강 반", classNames(selected.classes) || "없음"], ["메모", selected.memo]].map(([label, value]) => <div key={label}><span>{label}</span><strong>{value}</strong></div>)}</div></div>{selected.status === "재원" && <div className="detail-note"><CircleAlert size={17} /> 지문 장치 연동 전에는 학생의 좌석 출입 상태가 자동 변경되지 않습니다.</div>}</>}
+      {page === "students" && !selected && <><PageHeading eyebrow="STUDENT MANAGEMENT" title="학생 관리" description="학교와 학년·수험 상태를 나누어 관리합니다." action={<Button onClick={startNewStudent}><Plus size={17} /> 신규 학생 등록</Button>} />{message && <div className="success-message">{message}</div>}<section className="panel list-panel"><div className="list-heading"><div><h2>재원 학생 <span>{formatNumber(shownStudents.filter((student) => student.status === "재원").length)}</span></h2><p>학생을 선택하면 상세 정보를 볼 수 있습니다. 퇴원 학생은 별도 메뉴에서 확인합니다.</p></div></div><div className="filters"><label className="search-field"><Search size={17} /><input placeholder="이름, 연락처, 학교, 학년, 등록일 검색" value={search} onChange={(e) => setSearch(e.target.value)} aria-label="학생 검색" /></label><select aria-label="수강 반" value={classFilter} onChange={(e) => setClassFilter(e.target.value)}><option>전체 반</option>{classes.map((c) => <option value={c.id} key={c.id}>{c.name}</option>)}</select></div><StudentTable students={shownStudents.filter((student) => student.status === "재원")} classNames={classNames} select={showStudent} /></section></>}
+      {page === "withdrawn-students" && <><PageHeading eyebrow="STUDENT ARCHIVE" title="퇴원 학생" description="퇴원 처리된 학생 정보를 보관하며, 재원 상태로 복귀할 수 있습니다." />{message && <div className="success-message">{message}</div>}{error && <p className="error-message" role="alert">{error}</p>}<section className="panel list-panel"><div className="list-heading"><div><h2>보관된 학생 <span>{formatNumber(students.filter((student) => student.status === "퇴원").length)}</span></h2><p>학생을 선택해 상세 정보와 재원 복귀 기능을 확인하세요.</p></div></div><StudentTable students={students.filter((student) => student.status === "퇴원")} classNames={classNames} select={showStudent} /></section></>}
 
       {page === "student-new" && <><button className="back-link" onClick={() => go("students")}><ArrowLeft size={16} /> 학생 목록으로</button><PageHeading eyebrow="STUDENT MANAGEMENT" title={editing ? "학생 정보 수정" : "신규 학생 등록"} description="학생의 기본 정보와 수강 정보를 입력해 주세요." /><form onSubmit={saveStudent} className="panel form-panel"><div className="form-section-title"><div><h2>학생 정보</h2><p>입력한 정보는 현재 학원에 안전하게 저장됩니다.</p></div><span className="required-note">* 필수 입력</span></div><div className="form-grid">
         <Field label="학생 이름" required><input required value={studentForm.name} onChange={(e) => setStudentForm({ ...studentForm, name: e.target.value })} placeholder="이름을 입력해 주세요" /></Field>
+        <Field label="성별" required><select required value={studentForm.gender} onChange={(e) => setStudentForm({ ...studentForm, gender: e.target.value as Student["gender"] })}><option value="" disabled>성별 선택</option><option value="male">남학생</option><option value="female">여학생</option></select></Field>
         <Field label="생년월일" required><input required type="date" value={studentForm.birth} onChange={(e) => setStudentForm({ ...studentForm, birth: e.target.value })} /></Field>
         <Field label="학생 연락처" required><input required type="tel" value={studentForm.phone} onChange={(e) => setStudentForm({ ...studentForm, phone: e.target.value })} placeholder="010-0000-0000" /></Field>
         <Field label="보호자 연락처" required><input required type="tel" value={studentForm.guardian} onChange={(e) => setStudentForm({ ...studentForm, guardian: e.target.value })} placeholder="010-0000-0000" /></Field>
@@ -654,18 +762,18 @@ function Dashboard({ academy, user }: {
         <PageHeading eyebrow="STUDY ROOM" title="좌석 배치도" description="좌석에 마우스를 올리면 학생, 입실 시각, 누적 이용 시간이 표시됩니다." action={<div className="seat-demo-actions"><Button variant="outline" onClick={() => void changeDemoSeats("add")} disabled={savingDemo || seatOccupancies.some((seat) => seat.is_demo)}>더미 데이터 추가</Button><Button variant="outline" onClick={() => void changeDemoSeats("remove")} disabled={savingDemo || !seatOccupancies.some((seat) => seat.is_demo)}>더미 데이터 삭제</Button></div>} />
         {message && <div className="success-message">{message}</div>}
         {error && <p className="error-message" role="alert">{error}</p>}
-        <div className="seat-info panel"><div><strong>총 {formatNumber(64)}석</strong><span>좌측 4개 방 · 각 10석 / 우측 4개 방 · 각 6석</span></div><div className="seat-legend"><span><i className="seat-legend-present" /> 출석</span><span><i className="seat-legend-absent" /> 결석</span><span><i className="seat-legend-free" /> 공좌석</span><span><i className="seat-legend-in-use" /> 입실중</span><span><i className="seat-legend-exited" /> 퇴실</span></div></div>
-        {selectedSeat && <form className="panel seat-assignment-form" onSubmit={assignSeat}><div><h2>{formatNumber(selectedSeat.roomNumber)}번 방 · {formatNumber(selectedSeat.seatNumber)}번 좌석 배정</h2><p>현재는 수동으로 좌석을 배정하고 입실 시각을 기록합니다.</p></div><Field label="재원 학생" required><select required value={seatStudentId} onChange={(event) => setSeatStudentId(event.target.value)}><option value="" disabled>학생 선택</option>{unseatedStudents.map((student) => <option value={student.id} key={student.id}>{student.name} · {[student.school, student.grade].filter(Boolean).join(" ")}</option>)}</select></Field><div className="seat-form-actions"><Button variant="outline" onClick={() => setSelectedSeat(null)}>취소</Button><Button type="submit" disabled={savingSeat || !unseatedStudents.length}>{savingSeat ? "배정 중..." : "좌석 배정"} <ArrowRight size={16} /></Button></div>{!unseatedStudents.length && <p className="seat-empty-note">배정할 재원 학생이 없거나 모두 좌석을 사용 중입니다.</p>}</form>}
-        <div className="seat-map">{["좌측 구역", "우측 구역"].map((side) => <section className="seat-side panel" key={side}><div className="seat-side-heading"><div><h2>{side}</h2><p>{side === "좌측 구역" ? "각 방 10석" : "각 방 6석"}</p></div><span className="seat-hall-label">복도</span></div><div className="seat-room-list">{seatRooms.filter((room) => room.side === side).map((room) => <article className={`seat-room ${room.number <= 4 ? "room-left" : "room-right"}`} key={room.number}><div className="seat-room-heading"><h3>{formatNumber(room.number)}번 방</h3><span>{formatNumber(seatOccupancies.filter((seat) => seat.room_number === room.number).length)} / {formatNumber(room.capacity)}석</span></div><div className={`seat-grid ${room.number <= 4 ? "seat-grid-left" : "seat-grid-right"}`}>{Array.from({ length: room.capacity }, (_, index) => {
+        <div className="seat-info panel"><div><strong>총 {formatNumber(64)}석</strong><span>홀수 방은 남학생 · 짝수 방은 여학생 전용</span></div><div className="seat-legend"><span><i className="seat-legend-present" /> 출석</span><span><i className="seat-legend-absent" /> 결석(미스캔)</span><span><i className="seat-legend-free" /> 공좌석</span><span><i className="seat-legend-in-use" /> 입실중</span><span><i className="seat-legend-exited" /> 퇴실</span></div></div>
+        {selectedSeat && <form className="panel seat-assignment-form" onSubmit={assignSeat}><div><h2>{formatNumber(selectedSeat.roomNumber)}번 방 · {formatNumber(selectedSeat.seatNumber)}번 좌석 배정</h2><p>{selectedSeatGender === "male" ? "남학생 전용 방" : "여학생 전용 방"} · 출입 상태는 지문 스캔 시 바뀝니다.</p></div><Field label="재원 학생" required><select required value={seatStudentId} onChange={(event) => setSeatStudentId(event.target.value)}><option value="" disabled>학생 선택</option>{unseatedStudents.map((student) => <option value={student.id} key={student.id}>{student.name} · {student.gender === "male" ? "남학생" : "여학생"} · {[student.school, student.grade].filter(Boolean).join(" ")}</option>)}</select></Field><div className="seat-form-actions"><Button variant="outline" onClick={() => setSelectedSeat(null)}>취소</Button><Button type="submit" disabled={savingSeat || !unseatedStudents.length}>{savingSeat ? "배정 중..." : "좌석 배정"} <ArrowRight size={16} /></Button></div>{!unseatedStudents.length && <p className="seat-empty-note">이 방에 배정할 수 있는 미배정 재원 학생이 없습니다.</p>}</form>}
+        <div className="seat-map">{["좌측 구역", "우측 구역"].map((side) => <section className="seat-side panel" key={side}><div className="seat-side-heading"><div><h2>{side}</h2><p>{side === "좌측 구역" ? "각 방 10석" : "각 방 6석"} · {side === "좌측 구역" ? "홀수 방 남학생" : "짝수 방 여학생"}</p></div><span className="seat-hall-label">복도</span></div><div className="seat-room-list">{seatRooms.filter((room) => room.side === side).map((room) => <article className={`seat-room ${room.number <= 4 ? "room-left" : "room-right"}`} key={room.number}><div className="seat-room-heading"><h3>{formatNumber(room.number)}번 방 · {room.number % 2 === 1 ? "남학생" : "여학생"}</h3><span>{formatNumber(seatOccupancies.filter((seat) => seat.room_number === room.number).length)} / {formatNumber(room.capacity)}석</span></div><div className={`seat-grid ${room.number <= 4 ? "seat-grid-left" : "seat-grid-right"}`}>{Array.from({ length: room.capacity }, (_, index) => {
           const seatNumber = index + 1;
           const occupant = seatOccupancies.find((seat) => seat.room_number === room.number && seat.seat_number === seatNumber);
           const selected = selectedSeat?.roomNumber === room.number && selectedSeat.seatNumber === seatNumber;
           return <div className={`seat-cell ${occupant ? `seat-status-${occupant.status}` : "seat-status-vacant"}`} key={seatNumber}>
             <button type="button" className={`seat-tile ${occupant ? `seat-tile-${occupant.status}` : "seat-tile-vacant"} ${selected ? "seat-tile-selected" : ""}`} onClick={() => { if (!occupant) { setSelectedSeat({ roomNumber: room.number, seatNumber }); setSeatStudentId(unseatedStudents[0]?.id ?? ""); } }} aria-label={occupant ? `${room.number}번 방 ${seatNumber}번 좌석, ${occupant.student_name}, ${seatStatusLabels[occupant.status]}` : `${room.number}번 방 ${seatNumber}번 좌석, 공좌석`}><span className="seat-tile-number">{formatNumber(seatNumber)}번</span>{occupant ? <><span className="seat-full-name">{occupant.student_name}</span><span className="seat-tile-status">{seatStatusLabels[occupant.status]}</span></> : <span className="seat-tile-status">공좌석</span>}</button>
-            {occupant && <div className="seat-tooltip" role="tooltip"><strong>{occupant.student_name}{occupant.is_demo && <small className="demo-tag">더미</small>}</strong><span>{[occupant.school, occupant.grade].filter(Boolean).join(" · ")}</span><span>입실 {new Date(occupant.entered_at).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })}</span><span>누적 {formatDuration(occupant.entered_at, seatClock)}</span><label className="seat-status-field">상태<select value={occupant.status} onChange={(event) => void updateSeatStatus(occupant, event.target.value as SeatOccupancy["status"])}>{Object.entries(seatStatusLabels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label><button type="button" onClick={() => void clearSeat(occupant)}>좌석 비우기</button></div>}
+            {occupant && <div className="seat-tooltip" role="tooltip"><strong>{occupant.student_name}{occupant.is_demo && <small className="demo-tag">더미</small>}</strong><span>{[occupant.school, occupant.grade].filter(Boolean).join(" · ")}</span><span>입실 {new Date(occupant.entered_at).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })}</span><span>오늘 누적 {formatDuration(0, occupant.total_duration_ms + (occupant.status === "in_use" ? Math.max(0, seatClock - occupant.entered_at) : 0))}</span></div>}
           </div>;
         })}</div></article>)}</div></section>)}</div>
-        <div className="placeholder-info seat-future-note"><CircleAlert size={17} /><span>지문 인식 자동 출결과 학생 좌석의 실제 조명 연동은 추후 기기 연동 단계에서 구현합니다. 지금은 학생 좌석 배정과 입실 시각 기록만 지원합니다.</span></div>
+        <div className="placeholder-info seat-future-note"><CircleAlert size={17} /><span>좌석 출입 상태는 학생별 스캔 API에서 입·퇴실로 전환되고 5초마다 화면에 반영됩니다. 실제 지문 판독기 연동과 좌석 조명은 기기 연동 단계가 남아 있습니다. 퇴원 처리 시 좌석은 자동으로 비워집니다.</span></div>
       </>}
 
       {(page === "billing" || page === "payments") && <>
@@ -698,7 +806,14 @@ function Dashboard({ academy, user }: {
             if (!visibleCharges.length) {
               return <Empty title={page === "payments" ? "납부 완료 내역이 없습니다" : "이번 달 청구가 없습니다"} text={page === "payments" ? "납부 완료로 기록한 내역이 여기에 표시됩니다." : "청구 등록 버튼으로 학생별 수강료를 추가해 보세요."} />;
             }
-            return <div className="table-wrap"><table><thead><tr><th>학생</th><th>청구 월</th><th>청구 금액</th><th>납부 기한</th><th>상태</th><th>납부일</th>{canManageBilling && <th>관리</th>}</tr></thead><tbody>{visibleCharges.map((charge) => <tr key={charge.id}><td><strong>{charge.student_name}</strong>{charge.memo && <small className="billing-memo">{charge.memo}</small>}</td><td>{charge.billing_period}</td><td>{formatNumber(charge.amount)}원</td><td>{dateLabel(charge.due_date)}</td><td><span className={`status-pill ${charge.status === "paid" ? "active" : ""}`}>{charge.status === "paid" ? "납부 완료" : "미납"}</span></td><td>{charge.paid_at ? dateLabel(new Date(charge.paid_at).toISOString().slice(0, 10)) : "—"}</td>{canManageBilling && <td><button className="billing-status-button" onClick={() => void updateBillingStatus(charge)}>{charge.status === "paid" ? "미납으로 변경" : "납부 처리"}</button></td>}</tr>)}</tbody></table></div>;
+            return <div className="table-wrap"><table><thead><tr><th>학생</th><th>청구 월</th><th>청구 금액</th><th>납부 기한</th><th>상태</th><th>납부일</th>{canManageBilling && <th>관리</th>}</tr></thead><tbody>{visibleCharges.map((charge) => {
+              const daysRemaining = daysUntilDue(charge.due_date, currentDate);
+              const dueClass = charge.status === "unpaid"
+                ? daysRemaining <= 0 ? "billing-due-today" : daysRemaining <= 7 ? "billing-due-soon" : ""
+                : "";
+              const canRemind = charge.status === "unpaid" && daysRemaining > 0;
+              return <tr className={dueClass} key={charge.id}><td><strong>{charge.student_name}</strong>{charge.memo && <small className="billing-memo">{charge.memo}</small>}</td><td>{charge.billing_period}</td><td>{formatNumber(charge.amount)}원</td><td>{dateLabel(charge.due_date)}{dueClass === "billing-due-soon" && <small className="due-hint">결제일 {daysRemaining}일 전</small>}{dueClass === "billing-due-today" && <small className="due-hint">결제일</small>}</td><td><span className={`status-pill ${charge.status === "paid" ? "active" : ""}`}>{charge.status === "paid" ? "납부 완료" : "미납"}</span></td><td>{charge.paid_at ? dateLabel(new Date(charge.paid_at).toISOString().slice(0, 10)) : "—"}</td>{canManageBilling && <td className="billing-actions"><button className="billing-status-button" onClick={() => void updateBillingStatus(charge)}>{charge.status === "paid" ? "미납으로 변경" : "납부 처리"}</button>{canRemind && <button className="billing-reminder-button" onClick={showParentReminderNotConnected}>보호자 알림</button>}</td>}</tr>;
+            })}</tbody></table></div>;
           })()}
         </section>
       </>}
@@ -711,5 +826,5 @@ function Dashboard({ academy, user }: {
 
 function StudentTable({ students, classNames, select }: { students: Student[]; classNames: (ids: string[]) => string; select: (id: string) => void }) {
   if (!students.length) return <Empty title="학생이 없습니다" text="검색 조건을 변경하거나 새로운 학생을 등록해 보세요." />;
-  return <div className="table-wrap"><table><thead><tr><th>학생</th><th>학교</th><th>학년·수험 상태</th><th>수강 반</th><th>등록일</th><th>상태</th><th><span className="sr-only">상세</span></th></tr></thead><tbody>{students.map((s) => <tr key={s.id}><td><button className="table-person" onClick={() => select(s.id)}><span className="person-avatar">{s.name.slice(0, 1)}</span><span><strong>{s.name}</strong><small>{s.phone}</small></span></button></td><td>{s.school || "—"}</td><td>{s.grade || "—"}</td><td>{classNames(s.classes) || "—"}</td><td>{dateLabel(s.enrolled)}</td><td><span className={`status-pill ${s.status === "재원" ? "active" : ""}`}>{s.status}</span></td><td><button className="table-arrow" onClick={() => select(s.id)} aria-label={`${s.name} 상세 보기`}><ChevronRight size={17} /></button></td></tr>)}</tbody></table></div>;
+  return <div className="table-wrap"><table><thead><tr><th>학생</th><th>성별</th><th>학교</th><th>학년·수험 상태</th><th>수강 반</th><th>등록일</th><th>상태</th><th><span className="sr-only">상세</span></th></tr></thead><tbody>{students.map((s) => <tr key={s.id}><td><button className="table-person" onClick={() => select(s.id)}><span className="person-avatar">{s.name.slice(0, 1)}</span><span><strong>{s.name}</strong><small>{s.phone}</small></span></button></td><td>{s.gender === "male" ? "남학생" : s.gender === "female" ? "여학생" : "미지정"}</td><td>{s.school || "—"}</td><td>{s.grade || "—"}</td><td>{classNames(s.classes) || "—"}</td><td>{dateLabel(s.enrolled)}</td><td><span className={`status-pill ${s.status === "재원" ? "active" : ""}`}>{s.status}</span></td><td><button className="table-arrow" onClick={() => select(s.id)} aria-label={`${s.name} 상세 보기`}><ChevronRight size={17} /></button></td></tr>)}</tbody></table></div>;
 }

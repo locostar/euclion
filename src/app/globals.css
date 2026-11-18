@@ -209,5 +209,13 @@ input, select { min-height: 40px; color: #435a4e; background: white; border: 1px
 .billing-status-button:hover { border-color: #b8d2c0; background: #f7fbf8; }
 .billing-memo { display: block; margin-top: 5px; color: #9caaa1; font-size: 10px; white-space: normal; }
 .billing-permission-note { margin: 0 0 16px; padding: 12px 15px; border-radius: 8px; background: #f7faf7; }
+.student-detail-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.billing-due-soon td { background: #fff5e8; color: #875319; }
+.billing-due-today td { background: #fff0ef; color: #9c3935; }
+.due-hint { display: block; margin-top: 4px; font-size: 10px; font-weight: 700; }
+.billing-actions { white-space: nowrap; }
+.billing-reminder-button { display: block; margin-top: 5px; padding: 6px 9px; border: 1px solid #e7c89e; border-radius: 7px; background: #fffaf3; color: #80551f; font-size: 10px; opacity: 0; pointer-events: none; transition: opacity .12s ease; }
+tr:hover .billing-reminder-button, tr:focus-within .billing-reminder-button { opacity: 1; pointer-events: auto; }
+@media (hover: none) { .billing-reminder-button { opacity: 1; pointer-events: auto; } }
 @media (max-width: 780px) { .billing-summary { gap: 10px; }.billing-summary-card { padding: 18px; }.billing-summary-card strong { font-size: 20px; } }
 @media (max-width: 520px) { .billing-summary { grid-template-columns: 1fr; }.billing-toolbar { align-items: stretch; flex-direction: column; }.billing-toolbar .field { min-width: 0; }.billing-form { padding: 16px; } }
