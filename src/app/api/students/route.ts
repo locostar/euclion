@@ -102,6 +102,9 @@ export async function POST(request: Request) {
   const parsed = await parseJson(request, studentInput);
   if ("response" in parsed) return parsed.response;
   const student = parsed.data;
+  if (!student.classIds.length) {
+    return apiError(400, "CLASS_REQUIRED", "수강 반을 하나 이상 선택해 주세요.");
+  }
 
   if (!isDate(student.enrolledOn) || (student.birthDate && !isDate(student.birthDate))) {
     return apiError(400, "INVALID_DATE", "날짜 형식이 올바르지 않습니다.");
@@ -110,7 +113,28 @@ export async function POST(request: Request) {
     return apiError(400, "INVALID_CLASS", "선택한 반을 확인해 주세요.");
   }
 
+  const classFees = student.classIds.length
+    ? await result.context.env.DB.prepare(
+      `SELECT COALESCE(SUM(monthly_fee), 0) AS amount
+       FROM classes
+       WHERE organization_id = ? AND id IN (${student.classIds.map(() => "?").join(", ")})`,
+    )
+      .bind(result.context.organizationId, ...student.classIds)
+      .first<{ amount: number }>()
+    : { amount: 0 };
+
   const id = crypto.randomUUID();
+  const nowParts = new Intl.DateTimeFormat("en", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(Date.now());
+  const registeredOn = `${nowParts.find((part) => part.type === "year")?.value}-${nowParts.find((part) => part.type === "month")?.value}-${nowParts.find((part) => part.type === "day")?.value}`;
+  const initialChargeAmount = Math.max(
+    0,
+    (classFees?.amount ?? 0) + student.monthlyTuitionAdjustment,
+  );
   const statements = [
     result.context.env.DB.prepare(
       `INSERT INTO students
@@ -142,6 +166,28 @@ export async function POST(request: Request) {
       ).bind(result.context.organizationId, classId, id),
     ),
   ];
+
+  statements.push(
+    result.context.env.DB.prepare(
+      `INSERT INTO tuition_charges
+        (id, organization_id, student_id, billing_period, amount, due_date,
+         memo, status, paid_at)
+       VALUES (?, ?, ?, ?, ?, ?, '최초 등록 청구',
+         CASE WHEN ? = 0 THEN 'paid' ELSE 'unpaid' END,
+         CASE WHEN ? = 0 THEN cast(unixepoch('subsecond') * 1000 as integer)
+           ELSE NULL END)
+       ON CONFLICT (organization_id, student_id, billing_period) DO NOTHING`,
+    ).bind(
+      crypto.randomUUID(),
+      result.context.organizationId,
+      id,
+      registeredOn.slice(0, 7),
+      initialChargeAmount,
+      registeredOn,
+      initialChargeAmount,
+      initialChargeAmount,
+    ),
+  );
 
   await result.context.env.DB.batch(statements);
   return apiJson({ id }, { status: 201 });

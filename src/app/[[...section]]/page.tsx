@@ -1075,7 +1075,7 @@ function Dashboard({ academy, user }: {
       </>}
 
       {(page === "billing" || page === "payments") && <>
-        <PageHeading eyebrow="TUITION MANAGEMENT" title={labels[page]} description={page === "billing" ? "매월 1일 생성되는 청구 내역을 확인하고 납부 현황을 관리하세요. 자동 청구 기한은 매월 10일입니다." : "납부 완료로 기록한 수강료를 확인하세요."} action={page === "billing" && canManageBilling ? <Button onClick={startBilling} disabled={!activeStudents.length}><Plus size={17} /> 청구 등록</Button> : undefined} />
+        <PageHeading eyebrow="TUITION MANAGEMENT" title={labels[page]} description={page === "billing" ? "학생 등록 시 첫 청구가 생성되며, 이후 최초 등록일 기준 월별 청구가 자동 생성됩니다." : "납부 완료로 기록한 수강료를 확인하세요."} action={page === "billing" && canManageBilling ? <Button onClick={startBilling} disabled={!activeStudents.length}><Plus size={17} /> 청구 등록</Button> : undefined} />
         {message && <div className="success-message">{message}</div>}
         {error && <p className="error-message" role="alert">{error}</p>}
         {!canManageBilling && <div className="placeholder-info billing-permission-note"><CircleAlert size={17} /><span>청구 등록과 납부 상태 변경은 학원 관리자만 할 수 있습니다.</span></div>}
