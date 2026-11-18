@@ -8,6 +8,7 @@ type ClassRow = {
   teacher: string | null;
   grade: string | null;
   capacity: number | null;
+  monthly_fee: number;
   room: string | null;
   starts_on: string | null;
   ends_on: string | null;
@@ -20,7 +21,7 @@ export async function GET(request: Request) {
   if ("response" in result) return result.response;
 
   const classes = await result.context.env.DB.prepare(
-    `SELECT c.id, c.name, c.subject, c.teacher, c.grade, c.capacity,
+    `SELECT c.id, c.name, c.subject, c.teacher, c.grade, c.capacity, c.monthly_fee,
             c.room, c.starts_on, c.ends_on, c.memo,
             COUNT(CASE WHEN s.status = 'active' THEN 1 END) AS student_count
      FROM classes c
@@ -59,9 +60,9 @@ export async function POST(request: Request) {
   const id = crypto.randomUUID();
   await result.context.env.DB.prepare(
     `INSERT INTO classes
-      (id, organization_id, name, subject, teacher, grade, capacity,
+      (id, organization_id, name, subject, teacher, grade, capacity, monthly_fee,
        room, starts_on, ends_on, memo)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   )
     .bind(
       id,
@@ -71,6 +72,7 @@ export async function POST(request: Request) {
       classroom.teacher,
       classroom.grade,
       classroom.capacity ?? null,
+      classroom.monthlyFee,
       classroom.room,
       classroom.startsOn,
       classroom.endsOn,
@@ -105,7 +107,7 @@ export async function PATCH(request: Request) {
 
   const updated = await result.context.env.DB.prepare(
     `UPDATE classes
-     SET name = ?, subject = ?, teacher = ?, grade = ?, capacity = ?,
+     SET name = ?, subject = ?, teacher = ?, grade = ?, capacity = ?, monthly_fee = ?,
          room = ?, starts_on = ?, ends_on = ?, memo = ?
      WHERE id = ? AND organization_id = ?`,
   )
@@ -115,6 +117,7 @@ export async function PATCH(request: Request) {
       classroom.teacher,
       classroom.grade,
       classroom.capacity ?? null,
+      classroom.monthlyFee,
       classroom.room,
       classroom.startsOn,
       classroom.endsOn,

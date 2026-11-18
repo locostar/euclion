@@ -79,6 +79,7 @@ export const classInput = z.object({
   teacher: optionalText(100),
   grade: optionalText(80),
   capacity: z.number().int().positive().max(1000).nullable().optional(),
+  monthlyFee: z.number().int().min(0).max(1_000_000_000).default(0),
   room: optionalText(80),
   startsOn: optionalText(10),
   endsOn: optionalText(10),
@@ -124,6 +125,12 @@ export const seatAssignmentInput = z.object({
 });
 
 export const seatMoveInput = seatAssignmentInput;
+
+export const seatPricingInput = z.object({
+  roomNumber: z.number().int().min(1).max(8),
+  seatNumber: z.number().int().min(1).max(10),
+  monthlyFee: z.number().int().min(0).max(1_000_000_000),
+});
 
 export const seatScanInput = z.object({
   studentId: z.string().min(1).max(80),

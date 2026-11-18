@@ -3,7 +3,7 @@
 import {
   ArrowLeft, ArrowRight, Bell, BookOpen, CalendarDays,
   Check, ChevronDown, ChevronRight, CircleAlert, ClipboardCheck,
-  Menu, MessageSquareText, Plus, Search, Sparkles,
+  Fingerprint, Menu, MessageSquareText, Plus, Search, Sparkles,
   UsersRound, WalletCards, X,
 } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
@@ -16,9 +16,9 @@ type Page = "dashboard" | "students" | "withdrawn-students" | "student-new" | "c
 type Student = {
   id: string; name: string; birth: string; phone: string; guardian: string; gender: "male" | "female" | "";
   school: string; grade: string; graduatedSchool: string; address: string; enrolled: string; classes: string[];
-  memo: string; status: "재원" | "퇴원";
+  memo: string; status: "재원" | "퇴원"; fingerprintStatus: "not_registered" | "pending_device" | "ready"; monthlyTuition: number;
 };
-type ClassRoom = { id: string; name: string; subject: string; teacher: string; grade: string; capacity: string; room: string; start: string; end: string; memo: string };
+type ClassRoom = { id: string; name: string; subject: string; teacher: string; grade: string; capacity: string; monthlyFee: string; room: string; start: string; end: string; memo: string };
 type AttendanceStatus = "출석" | "결석" | "지각" | "조퇴" | "보강";
 type AttendanceEntry = { status: AttendanceStatus; memo: string };
 type Attendance = Record<string, AttendanceEntry>;
@@ -42,8 +42,8 @@ const today = () => {
 };
 const dateLabel = (value: string) => value.replaceAll("-", ".");
 const formatNumber = (value: number) => value.toLocaleString("ko-KR");
-const emptyStudent = (): Omit<Student, "id" | "status"> => ({ name: "", birth: "", phone: "", guardian: "", gender: "", school: "", grade: "", graduatedSchool: "", address: "", enrolled: "", classes: [], memo: "" });
-const emptyClass = (): Omit<ClassRoom, "id"> => ({ name: "", subject: "", teacher: "", grade: "", capacity: "", room: "", start: "", end: "", memo: "" });
+const emptyStudent = (): Omit<Student, "id" | "status" | "fingerprintStatus" | "monthlyTuition"> => ({ name: "", birth: "", phone: "", guardian: "", gender: "", school: "", grade: "", graduatedSchool: "", address: "", enrolled: "", classes: [], memo: "" });
+const emptyClass = (): Omit<ClassRoom, "id"> => ({ name: "", subject: "", teacher: "", grade: "", capacity: "", monthlyFee: "0", room: "", start: "", end: "", memo: "" });
 const subscribeDate = (callback: () => void) => {
   const timer = window.setInterval(callback, 60_000);
   return () => window.clearInterval(timer);
@@ -115,6 +115,8 @@ type StudentApi = {
   address: string | null;
   enrolled_on: string;
   status: "active" | "withdrawn";
+  fingerprint_status: "not_registered" | "pending_device" | "ready";
+  monthly_tuition: number;
   memo: string | null;
   classIds: string[];
 };
@@ -126,6 +128,7 @@ type ClassApi = {
   teacher: string | null;
   grade: string | null;
   capacity: number | null;
+  monthly_fee: number;
   room: string | null;
   starts_on: string | null;
   ends_on: string | null;
@@ -161,8 +164,10 @@ type SeatOccupancy = {
   status: "present" | "absent" | "exited";
   entered_at: number;
   total_duration_ms: number;
+  monthly_fee: number;
   is_demo: boolean;
 };
+type SeatPrice = { room_number: number; seat_number: number; monthly_fee: number };
 
 async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, init);
@@ -189,6 +194,8 @@ function toStudent(row: StudentApi): Student {
     classes: row.classIds,
     memo: row.memo ?? "",
     status: row.status === "active" ? "재원" : "퇴원",
+    fingerprintStatus: row.fingerprint_status,
+    monthlyTuition: row.monthly_tuition,
   };
 }
 
@@ -218,11 +225,21 @@ function toClassroom(row: ClassApi): ClassRoom {
     teacher: row.teacher ?? "",
     grade: row.grade ?? "",
     capacity: row.capacity?.toString() ?? "",
+    monthlyFee: row.monthly_fee.toString(),
     room: row.room ?? "",
     start: row.starts_on ?? "",
     end: row.ends_on ?? "",
     memo: row.memo ?? "",
   };
+}
+
+function classDuration(start: string, end: string) {
+  if (!start && !end) return "운영기간 미정";
+  if (!start || !end) return `${start ? `시작 ${dateLabel(start)}` : `종료 ${dateLabel(end)}`} · 기간 미정`;
+  const startTime = Date.parse(`${start}T00:00:00Z`);
+  const endTime = Date.parse(`${end}T00:00:00Z`);
+  const weeks = Math.max(1, Math.ceil((endTime - startTime + 1) / (7 * 86_400_000)));
+  return `${dateLabel(start)} ~ ${dateLabel(end)} · ${weeks}주`;
 }
 
 const attendanceStatuses: Record<AttendanceStatus, AttendanceApi["status"]> = {
@@ -261,6 +278,8 @@ function Dashboard({ academy, user }: {
   const [classEditing, setClassEditing] = useState<string | null>(null);
   const [rosterLoaded, setRosterLoaded] = useState(false);
   const [studentForm, setStudentForm] = useState(emptyStudent);
+  const [fingerprintRequested, setFingerprintRequested] = useState(false);
+  const [savingFingerprint, setSavingFingerprint] = useState(false);
   const [classForm, setClassForm] = useState(emptyClass);
   const [search, setSearch] = useState("");
   const [classFilter, setClassFilter] = useState("전체 반");
@@ -283,10 +302,14 @@ function Dashboard({ academy, user }: {
   });
   const [savingBilling, setSavingBilling] = useState(false);
   const [seatOccupancies, setSeatOccupancies] = useState<SeatOccupancy[]>([]);
+  const [seatPrices, setSeatPrices] = useState<Record<string, number>>({});
   const [selectedSeat, setSelectedSeat] = useState<{ roomNumber: number; seatNumber: number } | null>(null);
   const [seatStudentId, setSeatStudentId] = useState("");
+  const [pricingSeat, setPricingSeat] = useState<{ roomNumber: number; seatNumber: number } | null>(null);
+  const [seatPriceForm, setSeatPriceForm] = useState("0");
   const [seatClock, setSeatClock] = useState(() => Date.now());
   const [savingSeat, setSavingSeat] = useState(false);
+  const [savingSeatPrice, setSavingSeatPrice] = useState(false);
   const [savingDemo, setSavingDemo] = useState(false);
   const [movingSeatStudentId, setMovingSeatStudentId] = useState<string | null>(null);
   const [guardianReminder, setGuardianReminder] = useState(DEFAULT_GUARDIAN_REMINDER);
@@ -380,8 +403,14 @@ function Dashboard({ academy, user }: {
   }, [page, billingQueryPeriod]);
 
   const reloadSeats = useCallback(async () => {
-    const rows = await requestJson<SeatOccupancy[]>("/api/seats");
+    const [rows, prices] = await Promise.all([
+      requestJson<SeatOccupancy[]>("/api/seats"),
+      requestJson<SeatPrice[]>("/api/seats/pricing"),
+    ]);
     setSeatOccupancies(rows);
+    setSeatPrices(Object.fromEntries(
+      prices.map((price) => [`${price.room_number}:${price.seat_number}`, price.monthly_fee]),
+    ));
     setDataError("");
   }, []);
 
@@ -445,8 +474,16 @@ function Dashboard({ academy, user }: {
 
   useEffect(() => {
     if (!routeEditingStudent || editing === routeEditingStudent.id) return;
-    const { id, status: _status, ...form } = routeEditingStudent;
+    const {
+      id,
+      status: _status,
+      fingerprintStatus: _fingerprintStatus,
+      monthlyTuition: _monthlyTuition,
+      ...form
+    } = routeEditingStudent;
     void _status;
+    void _fingerprintStatus;
+    void _monthlyTuition;
     startTransition(() => {
       setStudentForm(form);
       setEditing(id);
@@ -478,7 +515,7 @@ function Dashboard({ academy, user }: {
     setError("");
     setMessage("");
   };
-  const startNewStudent = () => { setStudentForm({ ...emptyStudent(), enrolled: today() }); setEditing(null); go("student-new"); };
+  const startNewStudent = () => { setStudentForm({ ...emptyStudent(), enrolled: today() }); setEditing(null); setFingerprintRequested(false); go("student-new"); };
   const classNames = (ids: string[]) => ids.map((id) => classes.find((item) => item.id === id)?.name).filter(Boolean).join(", ");
   const activeStudents = students.filter((s) => s.status === "재원");
   const seatedStudentIds = new Set(seatOccupancies.flatMap((seat) => seat.student_id ? [seat.student_id] : []));
@@ -526,21 +563,70 @@ function Dashboard({ academy, user }: {
           body: JSON.stringify(body),
         },
       );
+      let fingerprintMessage = "";
+      if (fingerprintRequested && body.status === "active") {
+        try {
+          await requestJson<{ status: string }>(
+            `/api/students/${encodeURIComponent(saved.id)}/fingerprint`,
+            { method: "POST" },
+          );
+          fingerprintMessage = " 지문 등록 요청은 기기 연결 대기 상태입니다.";
+        } catch (caught) {
+          fingerprintMessage = ` 학생 정보는 저장했지만 지문 등록 요청은 처리되지 않았습니다: ${caught instanceof Error ? caught.message : "다시 시도해 주세요."}`;
+        }
+      }
       await reloadData();
       setEditing(null);
+      setFingerprintRequested(false);
       router.push(pagePath("students", saved.id), { scroll: false });
-      setMessage("학생 정보를 저장했습니다.");
+      setMessage(`학생 정보를 저장했습니다.${fingerprintMessage}`);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "학생 정보를 저장하지 못했습니다.");
     }
   }
   function editStudent(student: Student) {
-    const { id, status: _status, ...form } = student;
+    const {
+      id,
+      status: _status,
+      fingerprintStatus: _fingerprintStatus,
+      monthlyTuition: _monthlyTuition,
+      ...form
+    } = student;
     void _status;
+    void _fingerprintStatus;
+    void _monthlyTuition;
     setStudentForm(form);
     setEditing(id);
+    setFingerprintRequested(false);
     setMessage("");
     router.push(pagePath("student-new", null, id), { scroll: false });
+  }
+  async function requestFingerprint(studentId: string) {
+    setSavingFingerprint(true);
+    setError("");
+    try {
+      const response = await requestJson<{ status: string; deviceConnected: boolean }>(
+        `/api/students/${encodeURIComponent(studentId)}/fingerprint`,
+        { method: "POST" },
+      );
+      await reloadData();
+      setFingerprintRequested(false);
+      setMessage(response.deviceConnected
+        ? "지문 스캔 기기가 등록 준비를 마쳤습니다."
+        : "지문 등록 요청을 저장했습니다. 스캔 기기 연결을 기다리고 있습니다.");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "지문 등록 요청을 처리하지 못했습니다.");
+    } finally {
+      setSavingFingerprint(false);
+    }
+  }
+  async function prepareFingerprintRegistration() {
+    if (editing) {
+      await requestFingerprint(editing);
+      return;
+    }
+    setFingerprintRequested(true);
+    setMessage("학생 정보를 저장하면 지문 등록 요청이 기기 연결 대기 상태로 기록됩니다.");
   }
   async function updateStudentStatus(student: Student, status: "active" | "withdrawn") {
     if (status === "withdrawn" && !window.confirm(`${student.name} 학생을 퇴원 처리할까요? 배정된 좌석은 자동으로 비워집니다.`)) return;
@@ -588,6 +674,7 @@ function Dashboard({ academy, user }: {
           teacher: classForm.teacher,
           grade: classForm.grade,
           capacity: classForm.capacity ? Number(classForm.capacity) : null,
+          monthlyFee: Number(classForm.monthlyFee || 0),
           room: classForm.room,
           startsOn: classForm.start || null,
           endsOn: classForm.end || null,
@@ -664,15 +751,24 @@ function Dashboard({ academy, user }: {
     }
   }
   function startBilling() {
+    const firstStudent = activeStudents[0];
     setBillingForm({
-      studentId: activeStudents[0]?.id ?? "",
-      amount: "",
+      studentId: firstStudent?.id ?? "",
+      amount: firstStudent?.monthlyTuition ? String(firstStudent.monthlyTuition) : "",
       dueDate: billingQueryPeriod ? `${billingQueryPeriod}-10` : "",
       memo: "",
     });
     setBillingFormOpen(true);
     setError("");
     setMessage("");
+  }
+  function selectBillingStudent(studentId: string) {
+    const student = activeStudents.find((item) => item.id === studentId);
+    setBillingForm((current) => ({
+      ...current,
+      studentId,
+      amount: student?.monthlyTuition ? String(student.monthlyTuition) : "",
+    }));
   }
   async function saveBilling(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -735,7 +831,7 @@ function Dashboard({ academy, user }: {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ...selectedSeat, studentId: seatStudentId }),
       });
-      await reloadSeats();
+      await Promise.all([reloadSeats(), reloadData()]);
       setSelectedSeat(null);
       setSeatStudentId("");
       setMessage("좌석을 배정했습니다. 출입 상태는 지문 스캔 연동 시 자동 반영됩니다.");
@@ -743,6 +839,26 @@ function Dashboard({ academy, user }: {
       setError(caught instanceof Error ? caught.message : "좌석을 배정하지 못했습니다.");
     } finally {
       setSavingSeat(false);
+    }
+  }
+  async function saveSeatPrice(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!pricingSeat) return;
+    setSavingSeatPrice(true);
+    setError("");
+    try {
+      await requestJson<{ saved: boolean }>("/api/seats/pricing", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...pricingSeat, monthlyFee: Number(seatPriceForm || 0) }),
+      });
+      await Promise.all([reloadSeats(), reloadData()]);
+      setPricingSeat(null);
+      setMessage("좌석의 월 원비를 저장했습니다.");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "좌석 원비를 저장하지 못했습니다.");
+    } finally {
+      setSavingSeatPrice(false);
     }
   }
   async function moveSeat(studentId: string, destination: { roomNumber: number; seatNumber: number }) {
@@ -754,7 +870,7 @@ function Dashboard({ academy, user }: {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ...destination, studentId }),
       });
-      await reloadSeats();
+      await Promise.all([reloadSeats(), reloadData()]);
       setMovingSeatStudentId(null);
       setMessage("학생 좌석을 이동했습니다.");
     } catch (caught) {
@@ -852,6 +968,9 @@ function Dashboard({ academy, user }: {
       </>}
 
       {page === "students" && selected && <><button className="back-link" onClick={() => go("students")}><ArrowLeft size={16} /> 학생 목록으로</button><PageHeading eyebrow="STUDENT MANAGEMENT" title={selected.name} description={`${selected.status} · 등록일 ${dateLabel(selected.enrolled)}`} action={<div className="student-detail-actions"><Button variant="outline" onClick={() => editStudent(selected)}>정보 수정</Button>{selected.status === "재원" ? <Button variant="outline" onClick={() => void updateStudentStatus(selected, "withdrawn")}>퇴원 처리</Button> : <Button onClick={() => void updateStudentStatus(selected, "active")}>재원 복귀</Button>}</div>} />{message && <div className="success-message">{message}</div>}{error && <p className="error-message" role="alert">{error}</p>}<div className="panel detail-panel"><h2>학생 기본 정보</h2><div className="detail-grid">{[["이름", selected.name], ["성별", selected.gender === "male" ? "남학생" : selected.gender === "female" ? "여학생" : "미지정"], ["생년월일", selected.birth], ["학생 연락처", selected.phone], ["보호자 연락처", selected.guardian], ["학교", selected.school], ["학년·수험 상태", selected.grade], ...(selected.graduatedSchool ? [["졸업 고등학교", selected.graduatedSchool]] : []), ["주소", selected.address], ["등록일", selected.enrolled], ["수강 반", classNames(selected.classes) || "없음"], ["메모", selected.memo]].map(([label, value]) => <div key={label}><span>{label}</span><strong>{value}</strong></div>)}</div></div>{selected.status === "재원" && <div className="detail-note"><CircleAlert size={17} /> 지문 장치 연동 전에는 학생의 좌석 출입 상태가 자동 변경되지 않습니다.</div>}</>}
+      {page === "students" && selected && <section className="panel student-tuition-card"><span>월 수강료 합계</span><strong>{formatNumber(selected.monthlyTuition)}원</strong><small>수강 반 원비와 좌석 원비 기준</small></section>}
+      {page === "students" && selected && selected.status === "재원" && <section className="panel fingerprint-panel"><div><h2><Fingerprint size={18} /> 지문 등록 상태</h2><p>{selected.fingerprintStatus === "ready" ? "스캔 기기가 학생의 지문 등록을 받을 준비가 되었습니다." : selected.fingerprintStatus === "pending_device" ? "지문 등록 요청을 보관 중이며, 스캔 기기 연결을 기다리고 있습니다." : "아직 지문 등록 요청이 없습니다."}</p><span className={`fingerprint-status fingerprint-${selected.fingerprintStatus}`}>{selected.fingerprintStatus === "ready" ? "스캔 준비 완료" : selected.fingerprintStatus === "pending_device" ? "기기 연결 대기" : "미등록"}</span></div><Button variant="outline" disabled={savingFingerprint} onClick={() => void requestFingerprint(selected.id)}>{savingFingerprint ? "요청 중..." : "지문 등록 요청"}</Button></section>}
+
       {page === "students" && !selected && <><PageHeading eyebrow="STUDENT MANAGEMENT" title="학생 관리" description="학교와 학년·수험 상태를 나누어 관리합니다." action={<Button onClick={startNewStudent}><Plus size={17} /> 신규 학생 등록</Button>} />{message && <div className="success-message">{message}</div>}<section className="panel list-panel"><div className="list-heading"><div><h2>재원 학생 <span>{formatNumber(shownStudents.filter((student) => student.status === "재원").length)}</span></h2><p>학생을 선택하면 상세 정보를 볼 수 있습니다. 퇴원 학생은 별도 메뉴에서 확인합니다.</p></div></div><div className="filters"><label className="search-field"><Search size={17} /><input placeholder="이름, 연락처, 학교, 학년, 등록일 검색" value={search} onChange={(e) => setSearch(e.target.value)} aria-label="학생 검색" /></label><select aria-label="수강 반" value={classFilter} onChange={(e) => setClassFilter(e.target.value)}><option>전체 반</option>{classes.map((c) => <option value={c.id} key={c.id}>{c.name}</option>)}</select></div><StudentTable students={shownStudents.filter((student) => student.status === "재원")} classNames={classNames} select={showStudent} /></section></>}
       {page === "withdrawn-students" && <><PageHeading eyebrow="STUDENT ARCHIVE" title="퇴원 학생" description="퇴원 처리된 학생 정보를 보관하며, 재원 상태로 복귀할 수 있습니다." />{message && <div className="success-message">{message}</div>}{error && <p className="error-message" role="alert">{error}</p>}<section className="panel list-panel"><div className="list-heading"><div><h2>보관된 학생 <span>{formatNumber(students.filter((student) => student.status === "퇴원").length)}</span></h2><p>학생을 선택해 상세 정보와 재원 복귀 기능을 확인하세요.</p></div></div><StudentTable students={students.filter((student) => student.status === "퇴원")} classNames={classNames} select={showStudent} /></section></>}
 
@@ -869,8 +988,10 @@ function Dashboard({ academy, user }: {
         <Field label="메모" required><input required value={studentForm.memo} onChange={(e) => setStudentForm({ ...studentForm, memo: e.target.value })} placeholder="메모를 입력해 주세요" /></Field>
         </div><fieldset className="class-selector"><legend>수강 반 <i>*</i></legend><p>하나 이상의 반을 선택해 주세요.</p><div>{classes.map((c) => <label key={c.id}><input type="checkbox" checked={studentForm.classes.includes(c.id)} onChange={(e) => setStudentForm({ ...studentForm, classes: e.target.checked ? [...studentForm.classes, c.id] : studentForm.classes.filter((id) => id !== c.id) })} />{c.name}</label>)}</div></fieldset>{error && <p className="error-message" role="alert">{error}</p>}<div className="form-actions"><Button variant="outline" onClick={() => go("students")}>취소</Button><Button type="submit">{editing ? "변경 사항 저장" : "학생 등록하기"} <ArrowRight size={16} /></Button></div></form></>}
 
-      {page === "classes" && <><PageHeading eyebrow="CLASS MANAGEMENT" title="반 관리" description="학원에서 운영하는 반을 확인하고 수정·삭제할 수 있습니다." action={<Button onClick={() => { setClassForm(emptyClass()); setClassEditing(null); setError(""); go("class-new"); }}><Plus size={17} /> 반 등록</Button>} />{message && <div className="success-message">{message}</div>}{error && <p className="error-message" role="alert">{error}</p>}<div className="class-grid">{classes.map((c) => <article className="panel class-card" key={c.id}><div className="class-card-top"><span className="class-subject">{c.subject || "분야 미지정"}</span><BookOpen size={18} /></div><h2>{c.name}</h2><p>{c.grade || "대상 미지정"} · {c.room || "강의실 미지정"}</p><div className="class-meta"><span><UsersRound size={15} /> {formatNumber(activeStudents.filter((s) => s.classes.includes(c.id)).length)}명{c.capacity && ` / ${formatNumber(Number(c.capacity))}명`}</span><span>{c.teacher || "담당자 미지정"}</span></div><div className="class-actions"><Button variant="outline" onClick={() => editClass(c)}>수정</Button><Button variant="ghost" onClick={() => void deleteClass(c)}>삭제</Button></div></article>)}</div>{!classes.length && <section className="panel placeholder-panel"><Empty title="등록된 반이 없습니다" text="반 등록을 눌러 첫 반을 추가해 보세요." /></section>}</>}
-      {page === "class-new" && <><button className="back-link" onClick={() => go("classes")}><ArrowLeft size={16} /> 반 목록으로</button><PageHeading eyebrow="CLASS MANAGEMENT" title={classEditing ? "반 수정" : "반 등록"} description={classEditing ? "반 정보를 변경해 주세요." : "새로운 반의 정보를 입력해 주세요."} /><form onSubmit={saveClass} className="panel form-panel"><div className="form-section-title"><div><h2>반 정보</h2><p>반 정보는 현재 학원에 안전하게 저장됩니다.</p></div></div><div className="form-grid">{([{ key: "name", label: "반 이름" }, { key: "subject", label: "과목·분야" }, { key: "teacher", label: "담당 직원" }, { key: "grade", label: "대상 학년" }, { key: "capacity", label: "정원", type: "number" }, { key: "room", label: "강의실" }, { key: "start", label: "운영 시작일", type: "date" }, { key: "end", label: "운영 종료일", type: "date" }, { key: "memo", label: "메모" }] as const).map((field) => <Field label={field.label} key={field.key}><input type={"type" in field ? field.type : "text"} min={field.key === "capacity" ? "1" : undefined} value={classForm[field.key]} onChange={(e) => setClassForm({ ...classForm, [field.key]: e.target.value })} /></Field>)}</div>{error && <p className="error-message" role="alert">{error}</p>}<div className="form-actions"><Button variant="outline" onClick={() => go("classes")}>취소</Button><Button type="submit">{classEditing ? "변경 사항 저장" : "반 등록하기"} <ArrowRight size={16} /></Button></div></form></>}
+      {page === "student-new" && <section className="panel fingerprint-panel"><div><h2><Fingerprint size={18} /> 지문 등록</h2><p>{fingerprintRequested ? "학생 저장 후 등록 요청이 기기 연결 대기 상태로 보관됩니다." : "버튼을 누르면 등록 요청을 기록합니다. 지문 기기 연결 후 스캔 대기 요청을 전달합니다."}</p>{editing && <span className={`fingerprint-status fingerprint-${students.find((student) => student.id === editing)?.fingerprintStatus ?? "not_registered"}`}>{students.find((student) => student.id === editing)?.fingerprintStatus === "ready" ? "스캔 준비 완료" : students.find((student) => student.id === editing)?.fingerprintStatus === "pending_device" ? "기기 연결 대기" : "미등록"}</span>}</div><Button variant="outline" onClick={() => void prepareFingerprintRegistration()} disabled={savingFingerprint || (fingerprintRequested && !editing)}>{savingFingerprint ? "요청 중..." : fingerprintRequested && !editing ? "등록 요청 준비됨" : editing ? "지문 등록 요청" : "지문등록 버튼"}</Button></section>}
+
+      {page === "classes" && <><PageHeading eyebrow="CLASS MANAGEMENT" title="반 관리" description="학원에서 운영하는 반을 확인하고 수정·삭제할 수 있습니다." action={<Button onClick={() => { setClassForm(emptyClass()); setClassEditing(null); setError(""); go("class-new"); }}><Plus size={17} /> 반 등록</Button>} />{message && <div className="success-message">{message}</div>}{error && <p className="error-message" role="alert">{error}</p>}<div className="class-grid">{classes.map((c) => <article className="panel class-card" key={c.id}><div className="class-card-top"><span className="class-subject">{c.subject || "분야 미지정"}</span><BookOpen size={18} /></div><h2>{c.name}</h2><p>{c.grade || "대상 미지정"} · {c.room || "강의실 미지정"}</p><p className="class-period">{classDuration(c.start, c.end)}</p><p className="class-fee">월 수강료 {formatNumber(Number(c.monthlyFee))}원</p><div className="class-meta"><span><UsersRound size={15} /> {formatNumber(activeStudents.filter((s) => s.classes.includes(c.id)).length)}명{c.capacity && ` / ${formatNumber(Number(c.capacity))}명`}</span><span>{c.teacher || "담당자 미지정"}</span></div><div className="class-actions"><Button variant="outline" onClick={() => editClass(c)}>수정</Button><Button variant="ghost" onClick={() => void deleteClass(c)}>삭제</Button></div></article>)}</div>{!classes.length && <section className="panel placeholder-panel"><Empty title="등록된 반이 없습니다" text="반 등록을 눌러 첫 반을 추가해 보세요." /></section>}</>}
+      {page === "class-new" && <><button className="back-link" onClick={() => go("classes")}><ArrowLeft size={16} /> 반 목록으로</button><PageHeading eyebrow="CLASS MANAGEMENT" title={classEditing ? "반 수정" : "반 등록"} description={classEditing ? "반 정보를 변경해 주세요." : "새로운 반의 정보를 입력해 주세요."} /><form onSubmit={saveClass} className="panel form-panel"><div className="form-section-title"><div><h2>반 정보</h2><p>반 정보는 현재 학원에 안전하게 저장됩니다.</p></div></div><div className="form-grid">{([{ key: "name", label: "반 이름" }, { key: "subject", label: "과목·분야" }, { key: "teacher", label: "담당 직원" }, { key: "grade", label: "대상 학년" }, { key: "capacity", label: "정원", type: "number" }, { key: "monthlyFee", label: "월 수강료 (원)" }, { key: "room", label: "강의실" }, { key: "start", label: "운영 시작일", type: "date" }, { key: "end", label: "운영 종료일", type: "date" }, { key: "memo", label: "메모" }] as const).map((field) => <Field label={field.label} key={field.key}>{field.key === "monthlyFee" ? <input type="text" inputMode="numeric" pattern="[0-9,]*" value={formatNumber(Number(classForm.monthlyFee || 0))} onChange={(e) => setClassForm({ ...classForm, monthlyFee: e.target.value.replace(/\D/g, "") })} /> : <input type={"type" in field ? field.type : "text"} min={field.key === "capacity" ? "1" : undefined} value={classForm[field.key]} onChange={(e) => setClassForm({ ...classForm, [field.key]: e.target.value })} />}</Field>)}</div>{error && <p className="error-message" role="alert">{error}</p>}<div className="form-actions"><Button variant="outline" onClick={() => go("classes")}>취소</Button><Button type="submit">{classEditing ? "변경 사항 저장" : "반 등록하기"} <ArrowRight size={16} /></Button></div></form></>}
 
       {(page === "attendance" || page === "attendance-list") && <><PageHeading eyebrow="ATTENDANCE" title={labels[page]} description="날짜와 반을 선택해 학생별 출결을 확인하세요." action={page === "attendance" ? <Button onClick={saveAttendance} disabled={savingAttendance || !attendanceClass}>{savingAttendance ? "저장 중..." : "출결 저장"} <Check size={16} /></Button> : undefined} /><section className="panel list-panel">{message && <div className="success-message">{message}</div>}{error && <p className="error-message" role="alert">{error}</p>}<div className="attendance-controls"><Field label="날짜"><input type="date" value={selectedDate} onChange={(e) => setAttendanceDate(e.target.value)} /></Field><Field label="반 선택"><select value={attendanceClass} onChange={(e) => setAttendanceClass(e.target.value)}><option value="" disabled>반 선택</option>{classes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></Field></div><div className="list-heading"><div><h2>출결 현황</h2><p>선택한 날짜와 반의 출결 기록은 안전하게 저장됩니다.</p></div><span className="sample-label">{formatNumber(todayEntries.filter(([key]) => key.split("|")[1] === attendanceClass).length)}건 입력</span></div><div className="attendance-list">{students.filter((s) => s.status === "재원" && s.classes.includes(attendanceClass)).map((s) => { const entry = attendance[attendanceKey(s.id)]; return <div className="attendance-row" key={s.id}><div className="person-cell"><span className="person-avatar">{s.name.slice(0, 1)}</span><div><strong>{s.name}</strong><small>{[s.school, s.grade].filter(Boolean).join(" · ")}</small></div></div>{page === "attendance" ? <><select aria-label={`${s.name} 출결 상태`} value={entry?.status ?? ""} onChange={(e) => updateAttendance(s.id, { status: e.target.value as AttendanceStatus })}><option value="" disabled>미입력</option>{(["출석", "결석", "지각", "조퇴", "보강"] as const).map((status) => <option key={status}>{status}</option>)}</select><input aria-label={`${s.name} 출결 메모`} placeholder={entry ? "메모 (선택)" : "상태를 먼저 선택해 주세요"} disabled={!entry} value={entry?.memo ?? ""} onChange={(e) => updateAttendance(s.id, { memo: e.target.value })} /></> : <><span className="status-pill">{entry?.status ?? "미입력"}</span><span className="attendance-memo">{entry?.memo || "—"}</span></>}</div>})}{!students.some((s) => s.status === "재원" && s.classes.includes(attendanceClass)) && <Empty title="표시할 학생이 없어요" text="선택한 반에 재원 중인 학생이 없습니다." />}</div></section></>}
 
@@ -880,7 +1001,17 @@ function Dashboard({ academy, user }: {
         {error && <p className="error-message" role="alert">{error}</p>}
         <div className="seat-info panel"><div><strong>총 {formatNumber(64)}석</strong><span>홀수 방은 남학생 · 짝수 방은 여학생 전용</span></div><div className="seat-legend"><span><i className="seat-legend-present" /> 출석(입실)</span><span><i className="seat-legend-absent" /> 결석(미스캔)</span><span><i className="seat-legend-free" /> 공좌석</span><span><i className="seat-legend-exited" /> 퇴실</span></div></div>
         {movingSeatStudentId && <div className="panel seat-move-banner"><span><strong>{students.find((student) => student.id === movingSeatStudentId)?.name}</strong> 학생을 이동할 빈 좌석을 선택해 주세요.</span><Button variant="outline" disabled={savingSeat} onClick={() => setMovingSeatStudentId(null)}>이동 취소</Button></div>}
-        {selectedSeat && <form className="panel seat-assignment-form" onSubmit={assignSeat}><div><h2>{formatNumber(selectedSeat.roomNumber)}번 방 · {formatNumber(selectedSeat.seatNumber)}번 좌석 배정</h2><p>{selectedSeatGender === "male" ? "남학생 전용 방" : "여학생 전용 방"} · 출입 상태는 지문 스캔 시 바뀝니다.</p></div><Field label="재원 학생" required><select required value={seatStudentId} onChange={(event) => setSeatStudentId(event.target.value)}><option value="" disabled>학생 선택</option>{unseatedStudents.map((student) => <option value={student.id} key={student.id}>{student.name} · {student.gender === "male" ? "남학생" : "여학생"} · {[student.school, student.grade].filter(Boolean).join(" ")}</option>)}</select></Field><div className="seat-form-actions"><Button variant="outline" onClick={() => setSelectedSeat(null)}>취소</Button><Button type="submit" disabled={savingSeat || !unseatedStudents.length}>{savingSeat ? "배정 중..." : "좌석 배정"} <ArrowRight size={16} /></Button></div>{!unseatedStudents.length && <p className="seat-empty-note">이 방에 배정할 수 있는 미배정 재원 학생이 없습니다.</p>}</form>}
+        {selectedSeat && <form className="panel seat-assignment-form" onSubmit={assignSeat}>
+          <div><h2>{formatNumber(selectedSeat.roomNumber)}번 방 · {formatNumber(selectedSeat.seatNumber)}번 좌석 배정</h2><p>{selectedSeatGender === "male" ? "남학생 전용 방" : "여학생 전용 방"} · 월 좌석 원비 {formatNumber(seatPrices[`${selectedSeat.roomNumber}:${selectedSeat.seatNumber}`] ?? 0)}원</p></div>
+          <Field label="재원 학생" required><select required value={seatStudentId} onChange={(event) => setSeatStudentId(event.target.value)}><option value="" disabled>학생 선택</option>{unseatedStudents.map((student) => <option value={student.id} key={student.id}>{student.name} · {student.gender === "male" ? "남학생" : "여학생"} · {[student.school, student.grade].filter(Boolean).join(" ")}</option>)}</select></Field>
+          <div className="seat-form-actions"><Button variant="outline" onClick={() => setSelectedSeat(null)}>취소</Button><Button type="submit" disabled={savingSeat || !unseatedStudents.length}>{savingSeat ? "배정 중..." : "좌석 배정"} <ArrowRight size={16} /></Button></div>
+          {!unseatedStudents.length && <p className="seat-empty-note">이 방에 배정할 수 있는 미배정 재원 학생이 없습니다.</p>}
+        </form>}
+        {pricingSeat && <form className="panel seat-price-form" onSubmit={saveSeatPrice}>
+          <div><h2>{formatNumber(pricingSeat.roomNumber)}번 방 · {formatNumber(pricingSeat.seatNumber)}번 좌석 원비</h2><p>이 좌석에 배정된 학생의 월 수강료에 더해집니다.</p></div>
+          <Field label="월 좌석 원비 (원)"><input type="text" inputMode="numeric" pattern="[0-9,]*" value={formatNumber(Number(seatPriceForm || 0))} onChange={(event) => setSeatPriceForm(event.target.value.replace(/\D/g, ""))} /></Field>
+          <div className="seat-form-actions"><Button variant="outline" onClick={() => setPricingSeat(null)}>취소</Button><Button type="submit" disabled={savingSeatPrice}>{savingSeatPrice ? "저장 중..." : "원비 저장"} <Check size={16} /></Button></div>
+        </form>}
         <div className="seat-map">{["좌측 구역", "우측 구역"].map((side) => <section className="seat-side panel" key={side}><div className="seat-side-heading"><div><h2>{side}</h2><p>{side === "좌측 구역" ? "각 방 10석" : "각 방 6석"} · {side === "좌측 구역" ? "홀수 방 남학생" : "짝수 방 여학생"}</p></div><span className="seat-hall-label">복도</span></div><div className="seat-room-list">{seatRooms.filter((room) => room.side === side).map((room) => <article className={`seat-room ${room.number <= 4 ? "room-left" : "room-right"}`} key={room.number}><div className="seat-room-heading"><h3>{formatNumber(room.number)}번 방 · {room.number % 2 === 1 ? "남학생" : "여학생"}</h3><span>{formatNumber(seatOccupancies.filter((seat) => seat.room_number === room.number).length)} / {formatNumber(room.capacity)}석</span></div><div className={`seat-grid ${room.number <= 4 ? "seat-grid-left" : "seat-grid-right"}`}>{Array.from({ length: room.capacity }, (_, index) => {
           const seatNumber = index + 1;
           const occupant = seatOccupancies.find((seat) => seat.room_number === room.number && seat.seat_number === seatNumber);
@@ -898,7 +1029,7 @@ function Dashboard({ academy, user }: {
                 setSeatStudentId(unseatedStudents[0]?.id ?? "");
               }
             }} aria-label={occupant ? `${room.number}번 방 ${seatNumber}번 좌석, ${occupant.student_name}, ${seatStatusLabels[occupant.status]}${!occupant.is_demo ? ", 이동하려면 선택" : ""}` : `${room.number}번 방 ${seatNumber}번 좌석, 공좌석${movingSeatStudentId ? ", 이동 목적지" : ""}`}><span className="seat-tile-number">{formatNumber(seatNumber)}번</span>{occupant ? <><span className="seat-full-name">{occupant.student_name}</span><span className="seat-tile-status">{seatStatusLabels[occupant.status]}</span></> : <span className="seat-tile-status">{movingSeatStudentId ? "이동" : "공좌석"}</span>}</button>
-            {occupant && <div className="seat-tooltip" role="tooltip"><strong>{occupant.student_name}{occupant.is_demo && <small className="demo-tag">더미</small>}</strong><span>{[occupant.school, occupant.grade].filter(Boolean).join(" · ")}</span><span>입실 {new Date(occupant.entered_at).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })}</span><span>오늘 누적 {formatDuration(0, occupant.total_duration_ms + (occupant.status === "present" ? Math.max(0, seatClock - occupant.entered_at) : 0))}</span></div>}
+            <div className="seat-tooltip" role="tooltip"><strong>{occupant ? <>{occupant.student_name}{occupant.is_demo && <small className="demo-tag">더미</small>}</> : "공좌석"}</strong>{occupant && <><span>{[occupant.school, occupant.grade].filter(Boolean).join(" · ")}</span><span>입실 {new Date(occupant.entered_at).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })}</span><span>오늘 누적 {formatDuration(0, occupant.total_duration_ms + (occupant.status === "present" ? Math.max(0, seatClock - occupant.entered_at) : 0))}</span></>}<span>월 좌석 원비 {formatNumber(seatPrices[`${room.number}:${seatNumber}`] ?? 0)}원</span><button type="button" onClick={(event) => { event.stopPropagation(); setSelectedSeat(null); setPricingSeat({ roomNumber: room.number, seatNumber }); setSeatPriceForm(String(seatPrices[`${room.number}:${seatNumber}`] ?? 0)); }}>좌석 원비 설정</button></div>
           </div>;
         })}</div></article>)}</div></section>)}</div>
         <div className="placeholder-info seat-future-note"><CircleAlert size={17} /><span>좌석 출입 상태는 학생별 스캔 API에서 출석·퇴실로 전환되고 15초마다 화면에 반영됩니다. 실제 지문 판독기 연동과 좌석 조명은 기기 연동 단계가 남아 있습니다. 퇴원 처리 시 좌석은 자동으로 비워집니다.</span></div>
@@ -920,11 +1051,12 @@ function Dashboard({ academy, user }: {
           </div>
           {billingFormOpen && <form className="billing-form" onSubmit={saveBilling}>
             <div className="form-grid">
-              <Field label="학생" required><select required value={billingForm.studentId} onChange={(event) => setBillingForm({ ...billingForm, studentId: event.target.value })}><option value="" disabled>학생 선택</option>{activeStudents.map((student) => <option value={student.id} key={student.id}>{student.name}</option>)}</select></Field>
+              <Field label="학생" required><select required value={billingForm.studentId} onChange={(event) => selectBillingStudent(event.target.value)}><option value="" disabled>학생 선택</option>{activeStudents.map((student) => <option value={student.id} key={student.id}>{student.name} · 기본 {formatNumber(student.monthlyTuition)}원</option>)}</select></Field>
               <Field label="청구 금액 (원)" required><input required type="text" inputMode="numeric" pattern="[0-9,]*" value={billingForm.amount ? formatNumber(Number(billingForm.amount)) : ""} onChange={(event) => setBillingForm({ ...billingForm, amount: event.target.value.replace(/\D/g, "") })} placeholder="예: 300,000" /></Field>
               <Field label="납부 기한" required><input required type="date" value={billingForm.dueDate} onChange={(event) => setBillingForm({ ...billingForm, dueDate: event.target.value })} /></Field>
               <Field label="메모"><input maxLength={1000} value={billingForm.memo} onChange={(event) => setBillingForm({ ...billingForm, memo: event.target.value })} placeholder="선택 입력" /></Field>
             </div>
+            <p className="tuition-estimate-note">기본 금액은 학생의 수강 반 원비 합계와 배정 좌석의 원비를 반영합니다. 청구 시 금액은 직접 조정할 수 있습니다.</p>
             <div className="form-actions"><Button type="button" variant="outline" onClick={() => setBillingFormOpen(false)}>취소</Button><Button type="submit" disabled={savingBilling}>{savingBilling ? "저장 중..." : "청구 등록"} <ArrowRight size={16} /></Button></div>
           </form>}
           {page === "billing" && !activeStudents.length && <Empty title="재원 학생이 없습니다" text="청구 내역을 만들려면 먼저 학생을 등록해 주세요." />}

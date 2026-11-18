@@ -41,6 +41,9 @@ export const students = sqliteTable(
     status: text("status", { enum: ["active", "withdrawn"] })
       .notNull()
       .default("active"),
+    fingerprintStatus: text("fingerprint_status", {
+      enum: ["not_registered", "pending_device", "ready"],
+    }).notNull().default("not_registered"),
     memo: text("memo"),
     createdAt: integer("created_at", { mode: "timestamp_ms" })
       .notNull()
@@ -73,6 +76,7 @@ export const classes = sqliteTable(
     teacher: text("teacher"),
     grade: text("grade"),
     capacity: integer("capacity"),
+    monthlyFee: integer("monthly_fee").notNull().default(0),
     room: text("room"),
     startsOn: text("starts_on"),
     endsOn: text("ends_on"),
@@ -226,6 +230,7 @@ export const seatOccupancy = sqliteTable(
       enum: ["present", "absent", "exited"],
     }).notNull().default("absent"),
     totalDurationMs: integer("total_duration_ms").notNull().default(0),
+    monthlyFee: integer("monthly_fee").notNull().default(0),
     enteredAt: integer("entered_at", { mode: "timestamp_ms" }).notNull(),
     isDemo: integer("is_demo", { mode: "boolean" }).notNull().default(false),
   },
@@ -245,6 +250,28 @@ export const seatOccupancy = sqliteTable(
     index("seat_occupancy_org_demo_idx").on(
       table.organizationId,
       table.isDemo,
+    ),
+  ],
+);
+
+export const seatPricing = sqliteTable(
+  "seat_pricing",
+  {
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    roomNumber: integer("room_number").notNull(),
+    seatNumber: integer("seat_number").notNull(),
+    monthlyFee: integer("monthly_fee").notNull().default(0),
+    updatedAt: integer("updated_at", { mode: "timestamp_ms" })
+      .notNull()
+      .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`),
+  },
+  (table) => [
+    uniqueIndex("seat_pricing_org_room_seat_uq").on(
+      table.organizationId,
+      table.roomNumber,
+      table.seatNumber,
     ),
   ],
 );

@@ -18,6 +18,7 @@ type StudentRow = {
   address: string | null;
   enrolled_on: string;
   status: "active" | "withdrawn";
+  fingerprint_status: "not_registered" | "pending_device" | "ready";
   memo: string | null;
   class_id: string | null;
 };
@@ -47,7 +48,7 @@ export async function GET(request: Request) {
   const rows = await result.context.env.DB.prepare(
     `SELECT s.id, s.name, s.birth_date, s.phone, s.guardian_phone,
             s.gender, s.school, s.grade, s.graduated_school, s.address,
-            s.enrolled_on, s.status, s.memo,
+            s.enrolled_on, s.status, s.fingerprint_status, s.memo,
             cs.class_id
      FROM students s
      LEFT JOIN class_students cs
@@ -78,6 +79,7 @@ export async function GET(request: Request) {
       address: row.address,
       enrolled_on: row.enrolled_on,
       status: row.status,
+      fingerprint_status: row.fingerprint_status,
       memo: row.memo,
       classIds: [],
     };

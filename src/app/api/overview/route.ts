@@ -13,6 +13,8 @@ type StudentRow = {
   address: string | null;
   enrolled_on: string;
   status: "active" | "withdrawn";
+  fingerprint_status: "not_registered" | "pending_device" | "ready";
+  monthly_tuition: number;
   memo: string | null;
   class_id: string | null;
 };
@@ -24,6 +26,7 @@ type ClassRow = {
   teacher: string | null;
   grade: string | null;
   capacity: number | null;
+  monthly_fee: number;
   room: string | null;
   starts_on: string | null;
   ends_on: string | null;
@@ -39,7 +42,19 @@ export async function GET(request: Request) {
     result.context.env.DB.prepare(
       `SELECT s.id, s.name, s.birth_date, s.phone, s.guardian_phone,
               s.gender, s.school, s.grade, s.graduated_school, s.address,
-              s.enrolled_on, s.status, s.memo, cs.class_id
+              s.enrolled_on, s.status, s.fingerprint_status, s.memo, cs.class_id,
+              COALESCE((
+                SELECT SUM(c.monthly_fee)
+                FROM class_students fee_cs
+                INNER JOIN classes c
+                  ON c.id = fee_cs.class_id AND c.organization_id = fee_cs.organization_id
+                WHERE fee_cs.organization_id = s.organization_id
+                  AND fee_cs.student_id = s.id
+              ), 0) + COALESCE((
+                SELECT so.monthly_fee FROM seat_occupancy so
+                WHERE so.organization_id = s.organization_id AND so.student_id = s.id
+                LIMIT 1
+              ), 0) AS monthly_tuition
        FROM students s
        LEFT JOIN class_students cs
          ON cs.organization_id = s.organization_id
@@ -50,7 +65,7 @@ export async function GET(request: Request) {
       .bind(result.context.organizationId)
       .all<StudentRow>(),
     result.context.env.DB.prepare(
-      `SELECT c.id, c.name, c.subject, c.teacher, c.grade, c.capacity,
+      `SELECT c.id, c.name, c.subject, c.teacher, c.grade, c.capacity, c.monthly_fee,
               c.room, c.starts_on, c.ends_on, c.memo,
               COUNT(CASE WHEN s.status = 'active' THEN 1 END) AS student_count
        FROM classes c
@@ -81,6 +96,8 @@ export async function GET(request: Request) {
       address: row.address,
       enrolled_on: row.enrolled_on,
       status: row.status,
+      fingerprint_status: row.fingerprint_status,
+      monthly_tuition: row.monthly_tuition,
       memo: row.memo,
       classIds: [],
     };

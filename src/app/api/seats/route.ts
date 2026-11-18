@@ -18,6 +18,7 @@ type SeatRow = {
   status: "present" | "absent" | "exited";
   entered_at: number;
   total_duration_ms: number;
+  monthly_fee: number;
   is_demo: number;
 };
 
@@ -55,7 +56,8 @@ export async function GET(request: Request) {
             CASE WHEN so.student_id IS NOT NULL THEN s.name ELSE so.student_name END AS student_name,
             CASE WHEN so.student_id IS NOT NULL THEN s.school ELSE so.school END AS school,
             CASE WHEN so.student_id IS NOT NULL THEN s.grade ELSE so.grade END AS grade,
-            s.gender, so.status, so.entered_at, so.total_duration_ms, so.is_demo
+            s.gender, so.status, so.entered_at, so.total_duration_ms,
+            so.monthly_fee, so.is_demo
      FROM seat_occupancy so
      LEFT JOIN students s
        ON s.id = so.student_id AND s.organization_id = so.organization_id
@@ -116,8 +118,10 @@ export async function POST(request: Request) {
   const inserted = await result.context.env.DB.prepare(
     `INSERT INTO seat_occupancy
       (id, organization_id, room_number, seat_number, student_id,
-      student_name, school, grade, status, entered_at, total_duration_ms, is_demo)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'absent', ?, 0, 0)
+      student_name, school, grade, status, entered_at, total_duration_ms, monthly_fee, is_demo)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'absent', ?, 0,
+      COALESCE((SELECT monthly_fee FROM seat_pricing
+        WHERE organization_id = ? AND room_number = ? AND seat_number = ?), 0), 0)
      ON CONFLICT DO NOTHING`,
   )
     .bind(
@@ -130,6 +134,9 @@ export async function POST(request: Request) {
       student.school,
       student.grade,
       Date.now(),
+      result.context.organizationId,
+      roomNumber,
+      seatNumber,
     )
     .run();
 
@@ -166,7 +173,9 @@ export async function PATCH(request: Request) {
 
   const moved = await result.context.env.DB.prepare(
     `UPDATE seat_occupancy
-     SET room_number = ?, seat_number = ?
+     SET room_number = ?, seat_number = ?,
+         monthly_fee = COALESCE((SELECT monthly_fee FROM seat_pricing
+           WHERE organization_id = ? AND room_number = ? AND seat_number = ?), 0)
      WHERE organization_id = ? AND student_id = ? AND is_demo = 0
        AND NOT EXISTS (
          SELECT 1 FROM seat_occupancy target
@@ -176,6 +185,9 @@ export async function PATCH(request: Request) {
        )`,
   )
     .bind(
+      roomNumber,
+      seatNumber,
+      result.context.organizationId,
       roomNumber,
       seatNumber,
       result.context.organizationId,

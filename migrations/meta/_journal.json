@@ -57,6 +57,20 @@
       "when": 1795020726629,
       "tag": "0007_silly_namorita",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1795021960176,
+      "tag": "0008_tricky_pretty_boy",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1795022645909,
+      "tag": "0009_nappy_zaran",
+      "breakpoints": true
     }
   ]
 }
