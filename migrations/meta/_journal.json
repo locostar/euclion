@@ -22,6 +22,13 @@
       "when": 1794942884391,
       "tag": "0002_ambitious_nicolaos",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1795012401283,
+      "tag": "0003_youthful_taskmaster",
+      "breakpoints": true
     }
   ]
 }

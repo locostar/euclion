@@ -154,3 +154,44 @@ export const attendance = sqliteTable(
     ),
   ],
 );
+
+export const tuitionCharges = sqliteTable(
+  "tuition_charges",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    studentId: text("student_id").notNull(),
+    billingPeriod: text("billing_period").notNull(),
+    amount: integer("amount").notNull(),
+    dueDate: text("due_date").notNull(),
+    status: text("status", { enum: ["unpaid", "paid"] })
+      .notNull()
+      .default("unpaid"),
+    paidAt: integer("paid_at", { mode: "timestamp_ms" }),
+    memo: text("memo"),
+    createdAt: integer("created_at", { mode: "timestamp_ms" })
+      .notNull()
+      .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`),
+    updatedAt: integer("updated_at", { mode: "timestamp_ms" })
+      .notNull()
+      .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`),
+  },
+  (table) => [
+    uniqueIndex("tuition_charges_org_student_period_uq").on(
+      table.organizationId,
+      table.studentId,
+      table.billingPeriod,
+    ),
+    foreignKey({
+      columns: [table.studentId, table.organizationId],
+      foreignColumns: [students.id, students.organizationId],
+    }).onDelete("cascade"),
+    index("tuition_charges_org_period_status_idx").on(
+      table.organizationId,
+      table.billingPeriod,
+      table.status,
+    ),
+  ],
+);

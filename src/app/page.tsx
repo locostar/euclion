@@ -25,7 +25,7 @@ const menus: { label: string; items: [string, Page][] }[] = [
   { label: "학생 관리", items: [["학생 목록", "students"], ["신규 학생 등록", "student-new"], ["상담 기록", "consultations"]] },
   { label: "수업 관리", items: [["반 목록", "classes"], ["반 등록", "class-new"], ["수업 일정", "schedule"]] },
   { label: "출결 관리", items: [["출결 입력", "attendance"], ["출결 조회", "attendance-list"]] },
-  { label: "수강료 관리", items: [["청구 내역", "billing"], ["정기 청구 설정", "billing-settings"], ["납부·환불 내역", "payments"]] },
+  { label: "수강료 관리", items: [["청구 내역", "billing"], ["정기 청구 설정", "billing-settings"], ["납부 내역", "payments"]] },
   { label: "학원 관리", items: [["학원 정보", "academy"], ["직원 관리", "staff"], ["직원별 권한", "permissions"]] },
 ];
 const labels: Record<Page, string> = {
@@ -97,6 +97,17 @@ type ClassApi = {
 type AttendanceApi = {
   studentId: string;
   status: "present" | "absent" | "late" | "left_early" | "makeup" | null;
+  memo: string | null;
+};
+type BillingCharge = {
+  id: string;
+  student_id: string;
+  student_name: string;
+  billing_period: string;
+  amount: number;
+  due_date: string;
+  status: "unpaid" | "paid";
+  paid_at: number | null;
   memo: string | null;
 };
 
@@ -180,7 +191,21 @@ function Dashboard({ academy, user }: {
   const [message, setMessage] = useState("");
   const [dataError, setDataError] = useState("");
   const [savingAttendance, setSavingAttendance] = useState(false);
+  const [billingPeriod, setBillingPeriod] = useState("");
+  const [billingCharges, setBillingCharges] = useState<BillingCharge[]>([]);
+  const [billingFormOpen, setBillingFormOpen] = useState(false);
+  const [billingForm, setBillingForm] = useState({
+    studentId: "",
+    amount: "",
+    dueDate: "",
+    memo: "",
+  });
+  const [savingBilling, setSavingBilling] = useState(false);
   const selectedDate = attendanceDate || currentDate;
+  const canManageBilling = ["owner", "admin"].includes(academy.role);
+  const billingQueryPeriod = page === "dashboard"
+    ? currentDate.slice(0, 7)
+    : billingPeriod || currentDate.slice(0, 7);
 
   const reloadData = useCallback(async () => {
     try {
@@ -229,6 +254,26 @@ function Dashboard({ academy, user }: {
 
     return () => { active = false; };
   }, [selectedDate, attendanceClass]);
+
+  useEffect(() => {
+    if (!billingQueryPeriod) return;
+
+    let active = true;
+    requestJson<BillingCharge[]>(
+      `/api/billing?period=${encodeURIComponent(billingQueryPeriod)}`,
+    ).then((charges) => {
+      if (active) {
+        setBillingCharges(charges);
+        setDataError("");
+      }
+    }).catch((caught: unknown) => {
+      if (active) {
+        setDataError(caught instanceof Error ? caught.message : "수강료 내역을 불러오지 못했습니다.");
+      }
+    });
+
+    return () => { active = false; };
+  }, [billingQueryPeriod]);
 
   const go = (next: Page) => { setPage(next); setSelectedStudent(null); setMobileOpen(false); setNoticeOpen(false); setError(""); setMessage(""); };
   const startNewStudent = () => { setStudentForm({ ...emptyStudent(), enrolled: today() }); setEditing(null); go("student-new"); };
@@ -346,6 +391,67 @@ function Dashboard({ academy, user }: {
       setSavingAttendance(false);
     }
   }
+  function startBilling() {
+    setBillingForm({
+      studentId: activeStudents[0]?.id ?? "",
+      amount: "",
+      dueDate: billingQueryPeriod ? `${billingQueryPeriod}-10` : "",
+      memo: "",
+    });
+    setBillingFormOpen(true);
+    setError("");
+    setMessage("");
+  }
+  async function saveBilling(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSavingBilling(true);
+    setError("");
+    setMessage("");
+    try {
+      await requestJson<{ created: boolean }>("/api/billing", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          studentId: billingForm.studentId,
+          billingPeriod: billingQueryPeriod,
+          amount: Number(billingForm.amount),
+          dueDate: billingForm.dueDate,
+          memo: billingForm.memo,
+        }),
+      });
+      setBillingFormOpen(false);
+      setMessage("청구 내역을 등록했습니다.");
+      const charges = await requestJson<BillingCharge[]>(
+        `/api/billing?period=${encodeURIComponent(billingQueryPeriod)}`,
+      );
+      setBillingCharges(charges);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "청구 내역을 등록하지 못했습니다.");
+    } finally {
+      setSavingBilling(false);
+    }
+  }
+  async function updateBillingStatus(charge: BillingCharge) {
+    setError("");
+    setMessage("");
+    try {
+      await requestJson<{ updated: boolean }>("/api/billing", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          chargeId: charge.id,
+          status: charge.status === "paid" ? "unpaid" : "paid",
+        }),
+      });
+      const charges = await requestJson<BillingCharge[]>(
+        `/api/billing?period=${encodeURIComponent(billingQueryPeriod)}`,
+      );
+      setBillingCharges(charges);
+      setMessage(charge.status === "paid" ? "미납 상태로 변경했습니다." : "납부 완료로 기록했습니다.");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "납부 상태를 변경하지 못했습니다.");
+    }
+  }
   return <div className="app">
     <div className="demo-bar"><CircleAlert size={15} /> <span><strong>보안 연결됨</strong> · 로그인한 학원 구성원에게만 데이터가 표시됩니다.</span></div>
     <header className="header"><div className="header-inner">
@@ -375,7 +481,7 @@ function Dashboard({ academy, user }: {
         <div className="stats">
           <button className="stat-card" onClick={() => go("students")}><div className="stat-top"><span className="stat-icon mint"><UsersRound size={20} /></span><ArrowRight size={17} /></div><div className="stat-label">재원 학생</div><div className="stat-number">{activeStudents.length}<small>명</small></div><div className="stat-foot"><span className="green-dot" /> 현재 재원 중인 학생</div></button>
           <button className="stat-card" onClick={() => go("attendance")}><div className="stat-top"><span className="stat-icon blue"><ClipboardCheck size={20} /></span><ArrowRight size={17} /></div><div className="stat-label">오늘의 출결</div><div className="stat-number">{Object.entries(attendance).filter(([key]) => key.startsWith(`${currentDate}|`)).length}<small>건 입력</small></div><div className="stat-foot"><span className="blue-dot" /> 저장된 출결 기록</div></button>
-          <button className="stat-card" onClick={() => go("billing")}><div className="stat-top"><span className="stat-icon peach"><WalletCards size={20} /></span><ArrowRight size={17} /></div><div className="stat-label">미납 수강료</div><div className="stat-number pending-number">—</div><div className="stat-foot">수강료 기능 연결 예정</div></button>
+          <button className="stat-card" onClick={() => go("billing")}><div className="stat-top"><span className="stat-icon peach"><WalletCards size={20} /></span><ArrowRight size={17} /></div><div className="stat-label">이번 달 미납 수강료</div><div className="stat-number pending-number">{billingCharges.filter((charge) => charge.status === "unpaid").reduce((total, charge) => total + charge.amount, 0).toLocaleString("ko-KR")}<small>원</small></div><div className="stat-foot">{billingCharges.filter((charge) => charge.status === "unpaid").length}건 미납</div></button>
         </div>
         <div className="dashboard-grid"><section className="panel quick-panel"><div className="panel-heading"><div><h2>빠른 실행</h2><p>자주 사용하는 업무를 바로 시작하세요.</p></div><span className="panel-icon"><Sparkles size={17} /></span></div>
           <div className="quick-grid">
@@ -405,7 +511,42 @@ function Dashboard({ academy, user }: {
 
       {(page === "attendance" || page === "attendance-list") && <><PageHeading eyebrow="ATTENDANCE" title={labels[page]} description="날짜와 반을 선택해 학생별 출결을 확인하세요." action={page === "attendance" ? <Button onClick={saveAttendance} disabled={savingAttendance || !attendanceClass}>{savingAttendance ? "저장 중..." : "출결 저장"} <Check size={16} /></Button> : undefined} /><section className="panel list-panel">{message && <div className="success-message">{message}</div>}{error && <p className="error-message" role="alert">{error}</p>}<div className="attendance-controls"><Field label="날짜"><input type="date" value={selectedDate} onChange={(e) => setAttendanceDate(e.target.value)} /></Field><Field label="반 선택"><select value={attendanceClass} onChange={(e) => setAttendanceClass(e.target.value)}><option value="" disabled>반 선택</option>{classes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></Field></div><div className="list-heading"><div><h2>출결 현황</h2><p>선택한 날짜와 반의 출결 기록은 안전하게 저장됩니다.</p></div><span className="sample-label">{todayEntries.filter(([key]) => key.split("|")[1] === attendanceClass).length}건 입력</span></div><div className="attendance-list">{students.filter((s) => s.status === "재원" && s.classes.includes(attendanceClass)).map((s) => { const entry = attendance[attendanceKey(s.id)]; return <div className="attendance-row" key={s.id}><div className="person-cell"><span className="person-avatar">{s.name.slice(0, 1)}</span><div><strong>{s.name}</strong><small>{s.school}</small></div></div>{page === "attendance" ? <><select aria-label={`${s.name} 출결 상태`} value={entry?.status ?? ""} onChange={(e) => updateAttendance(s.id, { status: e.target.value as AttendanceStatus })}><option value="" disabled>미입력</option>{(["출석", "결석", "지각", "조퇴", "보강"] as const).map((status) => <option key={status}>{status}</option>)}</select><input aria-label={`${s.name} 출결 메모`} placeholder={entry ? "메모 (선택)" : "상태를 먼저 선택해 주세요"} disabled={!entry} value={entry?.memo ?? ""} onChange={(e) => updateAttendance(s.id, { memo: e.target.value })} /></> : <><span className="status-pill">{entry?.status ?? "미입력"}</span><span className="attendance-memo">{entry?.memo || "—"}</span></>}</div>})}{!students.some((s) => s.status === "재원" && s.classes.includes(attendanceClass)) && <Empty title="표시할 학생이 없어요" text="선택한 반에 재원 중인 학생이 없습니다." />}</div></section></>}
 
-      {(["consultations", "schedule", "billing", "billing-settings", "payments", "academy", "staff", "permissions"] as Page[]).includes(page) && <><PageHeading eyebrow={page === "consultations" ? "STUDENT MANAGEMENT" : page === "schedule" ? "CLASS MANAGEMENT" : ["billing", "billing-settings", "payments"].includes(page) ? "TUITION MANAGEMENT" : "ACADEMY SETTINGS"} title={labels[page]} description="논의한 기능을 차근차근 연결하고 있습니다." /><section className="panel placeholder-panel"><Empty title={`${labels[page]} 기능을 준비하고 있어요`} text="이 화면은 메뉴 구성 확인을 위한 자리입니다. 실제 데이터 저장이나 업무 처리는 아직 지원하지 않습니다." /><div className="placeholder-info"><CircleAlert size={17} /><span>{page === "schedule" ? "수업 일정과 휴강 처리 방식은 아직 정해지지 않았습니다." : ["staff", "permissions", "academy"].includes(page) ? "계정, 학원별 데이터 분리, 직원 권한은 아직 연결되지 않았습니다." : "실제 개인정보나 결제 정보를 입력하지 마세요."}</span></div></section></>}
+      {(page === "billing" || page === "payments") && <>
+        <PageHeading eyebrow="TUITION MANAGEMENT" title={labels[page]} description={page === "billing" ? "월별 청구 내역을 등록하고 납부 현황을 관리하세요." : "납부 완료로 기록한 수강료를 확인하세요."} action={page === "billing" && canManageBilling ? <Button onClick={startBilling} disabled={!activeStudents.length}><Plus size={17} /> 청구 등록</Button> : undefined} />
+        {message && <div className="success-message">{message}</div>}
+        {error && <p className="error-message" role="alert">{error}</p>}
+        {!canManageBilling && <div className="placeholder-info billing-permission-note"><CircleAlert size={17} /><span>청구 등록과 납부 상태 변경은 학원 관리자만 할 수 있습니다.</span></div>}
+        <section className="billing-summary">
+          {[{ label: "청구 합계", value: billingCharges.reduce((total, charge) => total + charge.amount, 0) }, { label: "납부 완료", value: billingCharges.filter((charge) => charge.status === "paid").reduce((total, charge) => total + charge.amount, 0) }, { label: "미납", value: billingCharges.filter((charge) => charge.status === "unpaid").reduce((total, charge) => total + charge.amount, 0) }].map((item) => <div className="panel billing-summary-card" key={item.label}><span>{item.label}</span><strong>{item.value.toLocaleString("ko-KR")}<small>원</small></strong></div>)}
+        </section>
+        <section className="panel list-panel">
+          <div className="billing-toolbar">
+            <div><h2>{billingQueryPeriod.replace("-", "년 ")}월 수강료</h2><p>결제 처리는 하지 않으며, 수납 상태를 수기로 기록합니다.</p></div>
+            <Field label="청구 월"><input type="month" value={billingQueryPeriod} onChange={(event) => { setBillingPeriod(event.target.value); if (billingFormOpen) setBillingForm((current) => ({ ...current, dueDate: `${event.target.value}-10` })); }} /></Field>
+          </div>
+          {billingFormOpen && <form className="billing-form" onSubmit={saveBilling}>
+            <div className="form-grid">
+              <Field label="학생" required><select required value={billingForm.studentId} onChange={(event) => setBillingForm({ ...billingForm, studentId: event.target.value })}><option value="" disabled>학생 선택</option>{activeStudents.map((student) => <option value={student.id} key={student.id}>{student.name}</option>)}</select></Field>
+              <Field label="청구 금액 (원)" required><input required type="number" min="1" max="1000000000" step="1" value={billingForm.amount} onChange={(event) => setBillingForm({ ...billingForm, amount: event.target.value })} placeholder="예: 300000" /></Field>
+              <Field label="납부 기한" required><input required type="date" value={billingForm.dueDate} onChange={(event) => setBillingForm({ ...billingForm, dueDate: event.target.value })} /></Field>
+              <Field label="메모"><input maxLength={1000} value={billingForm.memo} onChange={(event) => setBillingForm({ ...billingForm, memo: event.target.value })} placeholder="선택 입력" /></Field>
+            </div>
+            <div className="form-actions"><Button type="button" variant="outline" onClick={() => setBillingFormOpen(false)}>취소</Button><Button type="submit" disabled={savingBilling}>{savingBilling ? "저장 중..." : "청구 등록"} <ArrowRight size={16} /></Button></div>
+          </form>}
+          {page === "billing" && !activeStudents.length && <Empty title="재원 학생이 없습니다" text="청구 내역을 만들려면 먼저 학생을 등록해 주세요." />}
+          {(() => {
+            const visibleCharges = page === "payments"
+              ? billingCharges.filter((charge) => charge.status === "paid")
+              : billingCharges;
+            if (!visibleCharges.length) {
+              return <Empty title={page === "payments" ? "납부 완료 내역이 없습니다" : "이번 달 청구가 없습니다"} text={page === "payments" ? "납부 완료로 기록한 내역이 여기에 표시됩니다." : "청구 등록 버튼으로 학생별 수강료를 추가해 보세요."} />;
+            }
+            return <div className="table-wrap"><table><thead><tr><th>학생</th><th>청구 월</th><th>청구 금액</th><th>납부 기한</th><th>상태</th><th>납부일</th>{canManageBilling && <th>관리</th>}</tr></thead><tbody>{visibleCharges.map((charge) => <tr key={charge.id}><td><strong>{charge.student_name}</strong>{charge.memo && <small className="billing-memo">{charge.memo}</small>}</td><td>{charge.billing_period}</td><td>{charge.amount.toLocaleString("ko-KR")}원</td><td>{dateLabel(charge.due_date)}</td><td><span className={`status-pill ${charge.status === "paid" ? "active" : ""}`}>{charge.status === "paid" ? "납부 완료" : "미납"}</span></td><td>{charge.paid_at ? dateLabel(new Date(charge.paid_at).toISOString().slice(0, 10)) : "—"}</td>{canManageBilling && <td><button className="billing-status-button" onClick={() => void updateBillingStatus(charge)}>{charge.status === "paid" ? "미납으로 변경" : "납부 처리"}</button></td>}</tr>)}</tbody></table></div>;
+          })()}
+        </section>
+      </>}
+      {page === "billing-settings" && <><PageHeading eyebrow="TUITION MANAGEMENT" title={labels[page]} description="자동 청구 설정은 아직 지원하지 않습니다." /><section className="panel placeholder-panel"><Empty title="정기 청구 설정은 준비 중이에요" text="현재는 청구 내역에서 학생별 월 수강료를 직접 등록하고 납부 상태를 관리할 수 있습니다." /></section></>}
+      {(["consultations", "schedule", "academy", "staff", "permissions"] as Page[]).includes(page) && <><PageHeading eyebrow={page === "consultations" ? "STUDENT MANAGEMENT" : page === "schedule" ? "CLASS MANAGEMENT" : "ACADEMY SETTINGS"} title={labels[page]} description="논의한 기능을 차근차근 연결하고 있습니다." /><section className="panel placeholder-panel"><Empty title={`${labels[page]} 기능을 준비하고 있어요`} text="이 화면은 메뉴 구성 확인을 위한 자리입니다. 실제 데이터 저장이나 업무 처리는 아직 지원하지 않습니다." /><div className="placeholder-info"><CircleAlert size={17} /><span>{page === "schedule" ? "수업 일정과 휴강 처리 방식은 아직 정해지지 않았습니다." : ["staff", "permissions", "academy"].includes(page) ? "계정, 학원별 데이터 분리, 직원 권한은 아직 연결되지 않았습니다." : "기능을 준비하고 있습니다."}</span></div></section></>}
       <footer className="footer"><Logo /><span>학원 관리의 시작, 유클리온과 함께.</span><small>로그인 후 학원 데이터 관리</small></footer>
     </main>
   </div>;

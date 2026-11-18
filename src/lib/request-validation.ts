@@ -90,6 +90,19 @@ export const attendanceInput = z.object({
     ),
 });
 
+export const tuitionChargeInput = z.object({
+  studentId: z.string().min(1).max(80),
+  billingPeriod: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/),
+  amount: z.number().int().positive().max(1_000_000_000),
+  dueDate: date,
+  memo: optionalText(1000),
+});
+
+export const tuitionChargeStatusInput = z.object({
+  chargeId: z.string().min(1).max(80),
+  status: z.enum(["unpaid", "paid"]),
+});
+
 export function isJsonParseResult<T extends z.ZodType>(
   result: Awaited<ReturnType<typeof parseJson<T>>>,
 ): result is { response: Response } {
@@ -100,4 +113,8 @@ export function isDate(value: string) {
   if (!date.safeParse(value).success) return false;
   const parsed = new Date(`${value}T00:00:00.000Z`);
   return !Number.isNaN(parsed.valueOf()) && parsed.toISOString().slice(0, 10) === value;
+}
+
+export function isBillingPeriod(value: string) {
+  return /^\d{4}-(0[1-9]|1[0-2])$/.test(value);
 }
