@@ -123,6 +123,8 @@ export const seatAssignmentInput = z.object({
   studentId: z.string().min(1).max(80),
 });
 
+export const seatMoveInput = seatAssignmentInput;
+
 export const seatScanInput = z.object({
   studentId: z.string().min(1).max(80),
 });

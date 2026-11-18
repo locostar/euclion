@@ -80,3 +80,71 @@ export async function POST(request: Request) {
 
   return apiJson({ id }, { status: 201 });
 }
+
+export async function PATCH(request: Request) {
+  const result = await getAcademyContext(request, true);
+  if ("response" in result) return result.response;
+
+  const query = new URL(request.url).searchParams;
+  const id = query.get("id");
+  if (!id) return apiError(400, "CLASS_ID_REQUIRED", "수정할 반을 확인해 주세요.");
+
+  const parsed = await parseJson(request, classInput);
+  if ("response" in parsed) return parsed.response;
+  const classroom = parsed.data;
+
+  if (
+    (classroom.startsOn && !isDate(classroom.startsOn)) ||
+    (classroom.endsOn && !isDate(classroom.endsOn)) ||
+    (classroom.startsOn &&
+      classroom.endsOn &&
+      classroom.startsOn > classroom.endsOn)
+  ) {
+    return apiError(400, "INVALID_DATE_RANGE", "운영 기간을 확인해 주세요.");
+  }
+
+  const updated = await result.context.env.DB.prepare(
+    `UPDATE classes
+     SET name = ?, subject = ?, teacher = ?, grade = ?, capacity = ?,
+         room = ?, starts_on = ?, ends_on = ?, memo = ?
+     WHERE id = ? AND organization_id = ?`,
+  )
+    .bind(
+      classroom.name,
+      classroom.subject,
+      classroom.teacher,
+      classroom.grade,
+      classroom.capacity ?? null,
+      classroom.room,
+      classroom.startsOn,
+      classroom.endsOn,
+      classroom.memo,
+      id,
+      result.context.organizationId,
+    )
+    .run();
+
+  if (!updated.meta.changes) {
+    return apiError(404, "CLASS_NOT_FOUND", "수정할 반을 찾을 수 없습니다.");
+  }
+  return apiJson({ id });
+}
+
+export async function DELETE(request: Request) {
+  const result = await getAcademyContext(request, true);
+  if ("response" in result) return result.response;
+
+  const id = new URL(request.url).searchParams.get("id");
+  if (!id) return apiError(400, "CLASS_ID_REQUIRED", "삭제할 반을 확인해 주세요.");
+
+  const deleted = await result.context.env.DB.prepare(
+    "DELETE FROM classes WHERE id = ? AND organization_id = ?",
+  )
+    .bind(id, result.context.organizationId)
+    .run();
+
+  if (!deleted.meta.changes) {
+    return apiError(404, "CLASS_NOT_FOUND", "삭제할 반을 찾을 수 없습니다.");
+  }
+  return apiJson({ deleted: true });
+}

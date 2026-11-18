@@ -11,6 +11,16 @@ import { organization, user } from "./auth-schema";
 
 export * from "./auth-schema";
 
+export const academyPreferences = sqliteTable("academy_preferences", {
+  organizationId: text("organization_id")
+    .primaryKey()
+    .references(() => organization.id, { onDelete: "cascade" }),
+  guardianReminderMessage: text("guardian_reminder_message").notNull(),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" })
+    .notNull()
+    .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`),
+});
+
 export const students = sqliteTable(
   "students",
   {
@@ -213,8 +223,8 @@ export const seatOccupancy = sqliteTable(
     school: text("school"),
     grade: text("grade"),
     status: text("status", {
-      enum: ["present", "absent", "in_use", "exited"],
-    }).notNull().default("in_use"),
+      enum: ["present", "absent", "exited"],
+    }).notNull().default("absent"),
     totalDurationMs: integer("total_duration_ms").notNull().default(0),
     enteredAt: integer("entered_at", { mode: "timestamp_ms" }).notNull(),
     isDemo: integer("is_demo", { mode: "boolean" }).notNull().default(false),

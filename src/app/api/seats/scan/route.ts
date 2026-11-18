@@ -4,7 +4,7 @@ import { parseJson, seatScanInput } from "@/lib/request-validation";
 
 type SeatAccessRow = {
   id: string;
-  status: "present" | "absent" | "in_use" | "exited";
+  status: "present" | "absent" | "exited";
   entered_at: number;
   total_duration_ms: number;
 };
@@ -33,8 +33,8 @@ export async function POST(request: Request) {
 
   const now = Date.now();
   const isSameDay = isSameDateInTimeZone(seat.entered_at, now, "Asia/Seoul");
-  const isEntering = !isSameDay || seat.status !== "in_use";
-  const nextStatus = isEntering ? "in_use" : "exited";
+  const isEntering = !isSameDay || seat.status !== "present";
+  const nextStatus = isEntering ? "present" : "exited";
   const nextEnteredAt = isEntering ? now : seat.entered_at;
   const nextTotalDuration = isEntering
     ? isSameDay ? seat.total_duration_ms : 0

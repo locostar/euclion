@@ -1,6 +1,10 @@
 import { getAcademyContext, apiError, apiJson } from "@/lib/api-context";
 import { isSameDateInTimeZone } from "@/lib/date-utils";
-import { parseJson, seatAssignmentInput } from "@/lib/request-validation";
+import {
+  parseJson,
+  seatAssignmentInput,
+  seatMoveInput,
+} from "@/lib/request-validation";
 
 type SeatRow = {
   id: string;
@@ -11,7 +15,7 @@ type SeatRow = {
   school: string | null;
   grade: string | null;
   gender: "male" | "female" | null;
-  status: "present" | "absent" | "in_use" | "exited";
+  status: "present" | "absent" | "exited";
   entered_at: number;
   total_duration_ms: number;
   is_demo: number;
@@ -136,6 +140,68 @@ export async function POST(request: Request) {
   return apiJson({ assigned: true }, { status: 201 });
 }
 
+export async function PATCH(request: Request) {
+  const result = await getAcademyContext(request, true);
+  if ("response" in result) return result.response;
+
+  const parsed = await parseJson(request, seatMoveInput);
+  if ("response" in parsed) return parsed.response;
+  const { roomNumber, seatNumber, studentId } = parsed.data;
+  if (seatNumber > roomCapacity(roomNumber)) {
+    return apiError(400, "INVALID_SEAT", "해당 방의 좌석 번호를 확인해 주세요.");
+  }
+
+  const student = await result.context.env.DB.prepare(
+    `SELECT gender FROM students
+     WHERE id = ? AND organization_id = ? AND status = 'active' LIMIT 1`,
+  )
+    .bind(studentId, result.context.organizationId)
+    .first<{ gender: "male" | "female" | null }>();
+  if (!student) {
+    return apiError(404, "STUDENT_NOT_FOUND", "재원 중인 학생을 찾을 수 없습니다.");
+  }
+  if (!student.gender || (roomNumber % 2 === 1 ? "male" : "female") !== student.gender) {
+    return apiError(400, "ROOM_GENDER_MISMATCH", "홀수 방은 남학생, 짝수 방은 여학생만 배정할 수 있습니다.");
+  }
+
+  const moved = await result.context.env.DB.prepare(
+    `UPDATE seat_occupancy
+     SET room_number = ?, seat_number = ?
+     WHERE organization_id = ? AND student_id = ? AND is_demo = 0
+       AND NOT EXISTS (
+         SELECT 1 FROM seat_occupancy target
+         WHERE target.organization_id = ? AND target.room_number = ?
+           AND target.seat_number = ? AND target.student_id IS NOT NULL
+           AND target.student_id != ?
+       )`,
+  )
+    .bind(
+      roomNumber,
+      seatNumber,
+      result.context.organizationId,
+      studentId,
+      result.context.organizationId,
+      roomNumber,
+      seatNumber,
+      studentId,
+    )
+    .run();
+
+  if (!moved.meta.changes) {
+    const assigned = await result.context.env.DB.prepare(
+      "SELECT id FROM seat_occupancy WHERE organization_id = ? AND student_id = ? LIMIT 1",
+    )
+      .bind(result.context.organizationId, studentId)
+      .first<{ id: string }>();
+    if (!assigned) {
+      return apiError(404, "ASSIGNED_SEAT_NOT_FOUND", "이동할 학생의 좌석을 찾을 수 없습니다.");
+    }
+    return apiError(409, "SEAT_UNAVAILABLE", "이동할 좌석이 이미 사용 중입니다.");
+  }
+
+  return apiJson({ moved: true });
+}
+
 export async function DELETE(request: Request) {
   const result = await getAcademyContext(request, true);
   if ("response" in result) return result.response;
@@ -209,7 +275,7 @@ export async function PUT(request: Request) {
         `INSERT INTO seat_occupancy
           (id, organization_id, room_number, seat_number, student_id,
            student_name, school, grade, status, entered_at, total_duration_ms, is_demo)
-         VALUES (?, ?, ?, ?, NULL, ?, ?, ?, 'in_use', ?, 0, 1)`,
+         VALUES (?, ?, ?, ?, NULL, ?, ?, ?, 'present', ?, 0, 1)`,
       ).bind(
         crypto.randomUUID(),
         result.context.organizationId,
