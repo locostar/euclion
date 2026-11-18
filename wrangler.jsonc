@@ -1,7 +1,7 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "euclion",
-  "main": ".open-next/worker.js",
+  "main": "worker.ts",
   "compatibility_date": "2026-11-17",
   "compatibility_flags": ["nodejs_compat"],
   "upload_source_maps": true,
@@ -15,6 +15,9 @@
   },
   "observability": {
     "enabled": true
+  },
+  "triggers": {
+    "crons": ["0 0 1 * *"]
   },
   "d1_databases": [
     {
