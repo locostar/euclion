@@ -71,6 +71,13 @@
       "when": 1795022645909,
       "tag": "0009_nappy_zaran",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1795026501444,
+      "tag": "0010_parallel_proteus",
+      "breakpoints": true
     }
   ]
 }

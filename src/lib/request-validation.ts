@@ -58,6 +58,8 @@ export const studentInput = z.object({
   address: optionalText(240),
   enrolledOn: date,
   status: z.enum(["active", "withdrawn"]).optional(),
+  monthlyTuitionAdjustment: z.number().int().min(-1_000_000_000).max(1_000_000_000).default(0),
+  tuitionAdjustmentReason: optionalText(300),
   memo: optionalText(1000),
   classIds: z.array(z.string().min(1).max(80)).max(50).default([]),
 }).superRefine((student, context) => {
@@ -77,7 +79,8 @@ export const classInput = z.object({
   name: z.string().trim().min(1).max(100),
   subject: optionalText(80),
   teacher: optionalText(100),
-  grade: optionalText(80),
+  grade: z.array(z.enum(["고1", "고2", "고3", "재수", "삼수", "N수"])).max(6).default([])
+    .transform((grades) => grades.join(", ")),
   capacity: z.number().int().positive().max(1000).nullable().optional(),
   monthlyFee: z.number().int().min(0).max(1_000_000_000).default(0),
   room: optionalText(80),

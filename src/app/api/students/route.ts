@@ -18,7 +18,9 @@ type StudentRow = {
   address: string | null;
   enrolled_on: string;
   status: "active" | "withdrawn";
-  fingerprint_status: "not_registered" | "pending_device" | "ready";
+  fingerprint_status: "not_registered" | "pending_device" | "ready" | "registered";
+  monthly_tuition_adjustment: number;
+  tuition_adjustment_reason: string | null;
   memo: string | null;
   class_id: string | null;
 };
@@ -48,7 +50,8 @@ export async function GET(request: Request) {
   const rows = await result.context.env.DB.prepare(
     `SELECT s.id, s.name, s.birth_date, s.phone, s.guardian_phone,
             s.gender, s.school, s.grade, s.graduated_school, s.address,
-            s.enrolled_on, s.status, s.fingerprint_status, s.memo,
+            s.enrolled_on, s.status, s.fingerprint_status,
+            s.monthly_tuition_adjustment, s.tuition_adjustment_reason, s.memo,
             cs.class_id
      FROM students s
      LEFT JOIN class_students cs
@@ -80,6 +83,8 @@ export async function GET(request: Request) {
       enrolled_on: row.enrolled_on,
       status: row.status,
       fingerprint_status: row.fingerprint_status,
+      monthly_tuition_adjustment: row.monthly_tuition_adjustment,
+      tuition_adjustment_reason: row.tuition_adjustment_reason,
       memo: row.memo,
       classIds: [],
     };
@@ -110,8 +115,9 @@ export async function POST(request: Request) {
     result.context.env.DB.prepare(
       `INSERT INTO students
         (id, organization_id, name, birth_date, phone, guardian_phone, gender,
-         school, grade, graduated_school, address, enrolled_on, status, memo)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?)`,
+         school, grade, graduated_school, address, enrolled_on, status,
+         monthly_tuition_adjustment, tuition_adjustment_reason, memo)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?)`,
     ).bind(
       id,
       result.context.organizationId,
@@ -125,6 +131,8 @@ export async function POST(request: Request) {
       student.graduatedSchool,
       student.address,
       student.enrolledOn,
+      student.monthlyTuitionAdjustment,
+      student.tuitionAdjustmentReason,
       student.memo,
     ),
     ...student.classIds.map((classId) =>

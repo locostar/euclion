@@ -42,8 +42,12 @@ export const students = sqliteTable(
       .notNull()
       .default("active"),
     fingerprintStatus: text("fingerprint_status", {
-      enum: ["not_registered", "pending_device", "ready"],
+      enum: ["not_registered", "pending_device", "ready", "registered"],
     }).notNull().default("not_registered"),
+    monthlyTuitionAdjustment: integer("monthly_tuition_adjustment")
+      .notNull()
+      .default(0),
+    tuitionAdjustmentReason: text("tuition_adjustment_reason"),
     memo: text("memo"),
     createdAt: integer("created_at", { mode: "timestamp_ms" })
       .notNull()

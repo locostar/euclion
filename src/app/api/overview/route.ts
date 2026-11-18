@@ -13,7 +13,11 @@ type StudentRow = {
   address: string | null;
   enrolled_on: string;
   status: "active" | "withdrawn";
-  fingerprint_status: "not_registered" | "pending_device" | "ready";
+  fingerprint_status: "not_registered" | "pending_device" | "ready" | "registered";
+  class_tuition: number;
+  seat_tuition: number;
+  monthly_tuition_adjustment: number;
+  tuition_adjustment_reason: string | null;
   monthly_tuition: number;
   memo: string | null;
   class_id: string | null;
@@ -42,7 +46,8 @@ export async function GET(request: Request) {
     result.context.env.DB.prepare(
       `SELECT s.id, s.name, s.birth_date, s.phone, s.guardian_phone,
               s.gender, s.school, s.grade, s.graduated_school, s.address,
-              s.enrolled_on, s.status, s.fingerprint_status, s.memo, cs.class_id,
+              s.enrolled_on, s.status, s.fingerprint_status,
+              s.monthly_tuition_adjustment, s.tuition_adjustment_reason, s.memo, cs.class_id,
               COALESCE((
                 SELECT SUM(c.monthly_fee)
                 FROM class_students fee_cs
@@ -50,11 +55,26 @@ export async function GET(request: Request) {
                   ON c.id = fee_cs.class_id AND c.organization_id = fee_cs.organization_id
                 WHERE fee_cs.organization_id = s.organization_id
                   AND fee_cs.student_id = s.id
-              ), 0) + COALESCE((
+              ), 0) AS class_tuition,
+              COALESCE((
                 SELECT so.monthly_fee FROM seat_occupancy so
                 WHERE so.organization_id = s.organization_id AND so.student_id = s.id
                 LIMIT 1
-              ), 0) AS monthly_tuition
+              ), 0) AS seat_tuition,
+              MAX(0,
+                COALESCE((
+                  SELECT SUM(c.monthly_fee)
+                  FROM class_students fee_cs
+                  INNER JOIN classes c
+                    ON c.id = fee_cs.class_id AND c.organization_id = fee_cs.organization_id
+                  WHERE fee_cs.organization_id = s.organization_id
+                    AND fee_cs.student_id = s.id
+                ), 0) + COALESCE((
+                  SELECT so.monthly_fee FROM seat_occupancy so
+                  WHERE so.organization_id = s.organization_id AND so.student_id = s.id
+                  LIMIT 1
+                ), 0) + s.monthly_tuition_adjustment
+              ) AS monthly_tuition
        FROM students s
        LEFT JOIN class_students cs
          ON cs.organization_id = s.organization_id
@@ -97,6 +117,10 @@ export async function GET(request: Request) {
       enrolled_on: row.enrolled_on,
       status: row.status,
       fingerprint_status: row.fingerprint_status,
+      class_tuition: row.class_tuition,
+      seat_tuition: row.seat_tuition,
+      monthly_tuition_adjustment: row.monthly_tuition_adjustment,
+      tuition_adjustment_reason: row.tuition_adjustment_reason,
       monthly_tuition: row.monthly_tuition,
       memo: row.memo,
       classIds: [],
