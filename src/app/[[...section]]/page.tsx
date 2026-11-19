@@ -3,7 +3,7 @@
 import {
   ArrowLeft, ArrowRight, Bell, BookOpen, CalendarDays,
   Check, ChevronDown, ChevronRight, CircleAlert, ClipboardCheck,
-  Fingerprint, Menu, MessageSquareText, Plus, Search, Sparkles, Trash2,
+  Fingerprint, LayoutDashboard, Menu, MessageSquareText, Plus, Search, Settings, Sparkles, Trash2,
   UsersRound, WalletCards, X,
 } from "lucide-react";
 import { usePathname } from "next/navigation";
@@ -334,6 +334,17 @@ function Dashboard({ academy, user }: {
   const [attendanceClass, setAttendanceClass] = useState("");
   const [noticeOpen, setNoticeOpen] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [openMenu, setOpenMenu] = useState<string | null>(() =>
+    menus.find((menu) => menu.items.some(([, target]) => target === page))?.label ?? null,
+  );
+  useEffect(() => {
+    if (!mobileOpen) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setMobileOpen(false);
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [mobileOpen]);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [dataError, setDataError] = useState("");
@@ -653,6 +664,8 @@ function Dashboard({ academy, user }: {
       setClassEditing(null);
     }
     navigateWithinWorkspace(pagePath(next));
+    const group = menus.find((menu) => menu.items.some(([, target]) => target === next));
+    if (group) setOpenMenu(group.label);
     setMobileOpen(false);
     setNoticeOpen(false);
     setError("");
@@ -1205,29 +1218,44 @@ function Dashboard({ academy, user }: {
       setSavingDemo(false);
     }
   }
-  return <div className="app">
-    <div className="demo-bar"><CircleAlert size={15} /> <span><strong>보안 연결됨</strong> · 로그인한 학원 구성원에게만 데이터가 표시됩니다.</span></div>
-    <header className="header"><div className="header-inner">
-      <button className="logo-button" onClick={() => go("dashboard")} aria-label="Euclion 대시보드"><Logo /></button>
-      <nav className={`nav ${mobileOpen ? "nav-open" : ""}`} aria-label="주 메뉴">
-        <button className={`nav-home ${page === "dashboard" ? "nav-active" : ""}`} onClick={() => go("dashboard")}>홈</button>
-        <button className={`nav-home ${page === "seats" ? "nav-active" : ""}`} onClick={() => go("seats")}>좌석 배치도</button>
-        {menus.map((menu) => <div className="nav-group" key={menu.label}>
-          <button className={`nav-trigger ${menu.items.some(([, target]) => target === page) ? "nav-active" : ""}`}>{menu.label}<ChevronDown size={13} /></button>
-          <div className="dropdown">{menu.items.map(([label, target]) => <button key={target} onClick={() => target === "student-new" ? startNewStudent() : go(target)}>{label}<ChevronRight size={14} /></button>)}</div>
-        </div>)}
-        <button className="mobile-signout" onClick={() => void authClient.signOut()}>로그아웃 · {user.email}</button>
+  const menuIcons = [UsersRound, BookOpen, WalletCards, Settings];
+
+  return <div className="app workspace">
+    {mobileOpen && <button className="sidebar-backdrop" aria-label="메뉴 닫기" onClick={() => setMobileOpen(false)} />}
+    <aside id="workspace-sidebar" className={`workspace-sidebar ${mobileOpen ? "workspace-sidebar-open" : ""}`} aria-label="메뉴">
+      <div className="sidebar-brand">
+        <button className="logo-button" onClick={() => go("dashboard")} aria-label="Euclion 대시보드"><Logo /></button>
+        <button className="sidebar-close icon-button" onClick={() => setMobileOpen(false)} aria-label="메뉴 닫기"><X size={21} /></button>
+      </div>
+      <div className="sidebar-academy"><span>MY ACADEMY</span><strong>{academy.name}</strong></div>
+      <nav className="sidebar-nav" aria-label="주 메뉴">
+        <button className={`sidebar-link ${page === "dashboard" ? "sidebar-link-active" : ""}`} aria-current={page === "dashboard" ? "page" : undefined} onClick={() => go("dashboard")}><LayoutDashboard size={20} /><span>대시보드</span><ChevronRight size={16} /></button>
+        <button className={`sidebar-link ${page === "seats" ? "sidebar-link-active" : ""}`} aria-current={page === "seats" ? "page" : undefined} onClick={() => go("seats")}><ClipboardCheck size={20} /><span>좌석 배치도</span><ChevronRight size={16} /></button>
+        <div className="sidebar-section-label">학원 업무</div>
+        {menus.map((menu, index) => {
+          const Icon = menuIcons[index];
+          const active = menu.items.some(([, target]) => target === page);
+          const expanded = openMenu === menu.label;
+          return <div className="sidebar-group" key={menu.label}>
+            <button className={`sidebar-link ${active ? "sidebar-link-group-active" : ""}`} aria-expanded={expanded} onClick={() => setOpenMenu(expanded ? null : menu.label)}><Icon size={20} /><span>{menu.label}</span><ChevronDown className={expanded ? "sidebar-chevron-open" : ""} size={16} /></button>
+            {expanded && <div className="sidebar-submenu">{menu.items.map(([label, target]) => <button className={target === page ? "sidebar-submenu-active" : ""} aria-current={target === page ? "page" : undefined} key={target} onClick={() => target === "student-new" ? startNewStudent() : go(target)}>{label}<ChevronRight size={14} /></button>)}</div>}
+          </div>;
+        })}
       </nav>
+      <div className="sidebar-bottom"><span>보안 연결됨</span><small>학원 구성원 전용 공간</small><button onClick={() => void authClient.signOut()}>로그아웃 · {user.email}</button></div>
+    </aside>
+    <header className="header workspace-header"><div className="header-inner">
+      <button className="mobile-toggle icon-button" onClick={() => setMobileOpen(true)} aria-label="메뉴 열기" aria-expanded={mobileOpen} aria-controls="workspace-sidebar"><Menu size={23} /></button>
+      <div className="workspace-header-title"><span>{academy.name}</span><strong>{labels[page]}</strong></div>
       <div className="header-actions">
         <div className="notice-wrap"><button className="icon-button notification-button" aria-label="알림" aria-expanded={noticeOpen} onClick={() => setNoticeOpen(!noticeOpen)}><Bell size={19} /><span /></button>
           {noticeOpen && <div className="notice-popover"><div className="popover-head"><strong>알림</strong><span>준비 중</span></div><p>알림 기능은 아직 연결되지 않았습니다.</p><small>출결, 미납, 초대 등 알림 기능을 준비 중입니다.</small></div>}
         </div>
         <div className="header-divider" /><div className="account"><div className="avatar">{user.name.slice(0, 1)}</div><div><strong>{user.name}</strong><span>{academy.name} · {academy.role === "owner" ? "원장" : academy.role === "admin" ? "관리자" : "팀원"}</span></div><button className="auth-text-button" onClick={() => void authClient.signOut()}>로그아웃</button></div>
-        <button className="mobile-toggle icon-button" onClick={() => setMobileOpen(!mobileOpen)} aria-label={mobileOpen ? "메뉴 닫기" : "메뉴 열기"} aria-expanded={mobileOpen}>{mobileOpen ? <X size={21} /> : <Menu size={21} />}</button>
       </div>
     </div></header>
 
-    <main className="main">
+    <main className={`main ${page === "dashboard" ? "workspace-dashboard" : ""}`} id="workspace-main">
       {dataError && <p className="error-message" role="alert">{dataError}</p>}
       {page === "dashboard" && <>
         <div className="dashboard-welcome"><div><div className="eyebrow"><span className="eyebrow-dot" /> EUCLION WORKSPACE</div><h1>안녕하세요, {user.name}님 <span>✳</span></h1><p>{academy.name}의 하루를 편리하게 관리해 보세요.</p></div><div className="date-chip"><CalendarDays size={16} /> 오늘 <span>{currentDate ? dateLabel(currentDate) : "—"}</span></div></div>
