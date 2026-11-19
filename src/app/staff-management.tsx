@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { MailPlus, RefreshCw, ShieldCheck, Trash2 } from "lucide-react";
 
 type StaffMember = {
@@ -57,14 +57,15 @@ export function StaffManagement({
   academyName,
   currentUserEmail,
   currentRole,
+  academyNumber,
 }: {
   academyName: string;
   currentUserEmail: string;
   currentRole: string;
+  academyNumber: string;
 }) {
   const [staff, setStaff] = useState<StaffData>({ members: [], invitations: [] });
-  const [email, setEmail] = useState("");
-  const [role, setRole] = useState<StaffRole>("member");
+  const [joinCode, setJoinCode] = useState<{ code: string; expiresAt: number } | null>(null);
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
@@ -88,28 +89,18 @@ export function StaffManagement({
     return () => window.clearTimeout(timer);
   }, [reload]);
 
-  async function invite(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  async function generateJoinCode() {
     setPending(true);
     setError("");
     setMessage("");
+    setJoinCode(null);
     try {
-      await requestJson("/api/staff", {
+      const result = await requestJson<{ code: string; expiresAt: number }>("/api/academy/join-code", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          email: email.trim(),
-          role,
-          resend: false,
-        }),
       });
-      setMessage(`${email.trim()} 주소로 초대 이메일 발송을 요청했습니다. 수신함과 스팸함을 확인해 주세요.`);
-      setEmail("");
-      await reload(false);
+      setJoinCode(result);
     } catch (caught) {
-      const message = caught instanceof Error ? caught.message : "직원 초대에 실패했습니다.";
-      await reload(false);
-      setError(message);
+      setError(caught instanceof Error ? caught.message : "초대번호를 발급하지 못했습니다.");
     } finally {
       setPending(false);
     }
@@ -168,13 +159,14 @@ export function StaffManagement({
       {message && <div className="success-message" role="status">{message}</div>}
       {error && <p className="error-message" role="alert">{error}</p>}
       <section className="panel staff-invite-panel">
-        <div className="panel-heading"><div><h2>직원 초대</h2><p>초대받은 사람은 이메일 링크에서 본인 계정으로 로그인하거나 새 계정을 만들 수 있습니다.</p></div><MailPlus size={19} className="muted-icon" /></div>
-        <form className="staff-invite-form" onSubmit={(event) => void invite(event)}>
-          <label className="field">이메일<input type="email" autoComplete="email" required maxLength={254} value={email} onChange={(event) => setEmail(event.target.value)} placeholder="staff@example.com" /></label>
-          <label className="field">직급<select value={role} onChange={(event) => setRole(event.target.value as StaffRole)}>{Object.entries(roleLabels).filter(([value]) => value !== "owner" || currentRole === "owner").map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label>
-          <button className="button button-primary" type="submit" disabled={pending}><MailPlus size={16} />초대 이메일 보내기</button>
-        </form>
-        <p className="staff-permission-note"><ShieldCheck size={15} />현재 원장·관리자·팀원은 동일한 권한으로 운영됩니다.</p>
+        <div className="panel-heading"><div><h2>직원 초대</h2><p>직원이 계정을 만든 뒤 학원 고유번호와 초대번호를 입력하면 팀원으로 참여합니다.</p></div><MailPlus size={19} className="muted-icon" /></div>
+        <p>학원 고유번호: <strong>{academyNumber}</strong></p>
+        {currentRole === "owner" ? <>
+          <button className="button button-primary" type="button" disabled={pending} onClick={() => void generateJoinCode()}><MailPlus size={16} />새 초대번호 발급</button>
+          {joinCode && <p role="status">초대번호: <strong>{joinCode.code}</strong> · 만료: {new Date(joinCode.expiresAt).toLocaleString("ko-KR")}</p>}
+          <p>새 번호 발급 시 이전 번호는 무효가 됩니다. 번호는 한 명만 사용할 수 있으며 24시간 후 만료됩니다. 잘못 입력을 5회 하면 원장이 새 번호를 발급해야 합니다. 번호는 발급 직후에만 표시됩니다.</p>
+        </> : <p>초대번호 발급은 원장에게 요청해 주세요.</p>}
+        <p className="staff-permission-note"><ShieldCheck size={15} />팀원은 학원 데이터 관리 권한을 가집니다. 신뢰할 수 있는 사람에게만 번호를 알려 주세요.</p>
       </section>
       <section className="panel staff-list-panel">
         <div className="panel-heading"><div><h2>학원 직원</h2><p>{staff.members.length.toLocaleString("ko-KR")}명이 학원에 참여 중입니다.</p></div></div>

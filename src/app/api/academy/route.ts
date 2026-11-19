@@ -6,7 +6,6 @@ import { z } from "zod";
 
 const academyInput = z.object({
   name: z.string().trim().min(2).max(100),
-  role: z.enum(["owner", "admin", "member"]).default("owner"),
 });
 
 export async function GET(request: Request) {
@@ -18,26 +17,28 @@ export async function GET(request: Request) {
   }
 
   let result = await env.DB.prepare(
-    `SELECT o.id, o.name, m.role
+    `SELECT o.id, o.name, m.role, printf('%s-%06d', n.issued_month, n.sequence) AS number
      FROM member m
      INNER JOIN organization o ON o.id = m.organization_id
+     INNER JOIN academy_number n ON n.organization_id = o.id
      INNER JOIN session s ON s.active_organization_id = o.id
      WHERE m.user_id = ? AND s.id = ? AND s.expires_at > ?
      LIMIT 1`,
   )
     .bind(session.user.id, session.session.id, Date.now())
-    .first<{ id: string; name: string; role: string }>();
+    .first<{ id: string; name: string; role: string; number: string }>();
 
   if (!result) {
     const membership = await env.DB.prepare(
-      `SELECT o.id, o.name, m.role
+      `SELECT o.id, o.name, m.role, printf('%s-%06d', n.issued_month, n.sequence) AS number
        FROM member m
        INNER JOIN organization o ON o.id = m.organization_id
+       INNER JOIN academy_number n ON n.organization_id = o.id
        WHERE m.user_id = ?
        LIMIT 1`,
     )
       .bind(session.user.id)
-      .first<{ id: string; name: string; role: string }>();
+      .first<{ id: string; name: string; role: string; number: string }>();
 
     if (membership) {
       await auth.api.setActiveOrganization({
@@ -95,15 +96,6 @@ export async function POST(request: Request) {
 
   if (!created) {
     return apiError(500, "ACADEMY_CREATION_FAILED", "학원을 등록하지 못했습니다.");
-  }
-
-  const updatedMembership = await env.DB.prepare(
-    "UPDATE member SET role = ? WHERE organization_id = ? AND user_id = ?",
-  )
-    .bind(parsed.data.role, created.id, session.user.id)
-    .run();
-  if (updatedMembership.meta.changes === 0) {
-    return apiError(500, "ACADEMY_ROLE_UPDATE_FAILED", "가입 직급을 저장하지 못했습니다.");
   }
 
   await auth.api.setActiveOrganization({

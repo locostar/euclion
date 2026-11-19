@@ -312,7 +312,7 @@ const seatStatusLabels: Record<SeatOccupancy["status"], string> = {
 };
 
 function Dashboard({ academy, user }: {
-  academy: { id: string; name: string; role: string };
+  academy: { id: string; name: string; role: string; number: string };
   user: { name: string; email: string };
 }) {
   const pathname = usePathname();
@@ -1445,13 +1445,14 @@ function Dashboard({ academy, user }: {
           </>}
         </>}
       </>}
-      {page === "staff" && <StaffManagement academyName={academy.name} currentUserEmail={user.email} currentRole={academy.role} />}
+      {page === "staff" && <StaffManagement academyName={academy.name} academyNumber={academy.number} currentUserEmail={user.email} currentRole={academy.role} />}
       {page === "schedule" && <><PageHeading eyebrow="MOCK EXAM SCHEDULE" title="모의고사 일정" description="공식 공지에서 시험 일정과 응시 자격을 확인하세요." /><section className="panel"><div className="panel-heading"><div><h2>공식 일정 확인</h2><p>자동 일정 수집은 아직 연결되지 않았습니다. 아래 링크는 새로운 일정을 자동으로 표시하지 않습니다.</p></div></div><div className="official-schedule-links">
         <a href="https://www.ice.go.kr/ice/na/ntt/selectNttList.do?mi=10840&bbsId=1482" target="_blank" rel="noopener noreferrer">인천광역시교육청 공지사항 <ArrowRight size={15} /></a>
         <a href="https://www.ice.go.kr/ice/na/ntt/selectNttInfo.do?nttSn=3367040" target="_blank" rel="noopener noreferrer">2026학년도 전국연합학력평가 일정 공지 <ArrowRight size={15} /></a>
         <a href="https://m.korea.kr/briefing/pressReleaseView.do?newsId=156751969" target="_blank" rel="noopener noreferrer">2027학년도 6월 모의평가 시행계획 <ArrowRight size={15} /></a>
       </div><p className="official-schedule-note">위 개별 공지는 지난 일정일 수 있습니다. 최신 공지와 졸업생 응시 가능 여부를 반드시 확인해 주세요.</p></section></>}
-      {(["academy", "permissions"] as Page[]).includes(page) && <><PageHeading eyebrow="ACADEMY SETTINGS" title={labels[page]} description="논의한 기능을 차근차근 연결하고 있습니다." /><section className="panel placeholder-panel"><Empty title={`${labels[page]} 기능을 준비하고 있어요`} text="이 화면은 메뉴 구성 확인을 위한 자리입니다. 실제 데이터 저장이나 업무 처리는 아직 지원하지 않습니다." /><div className="placeholder-info"><CircleAlert size={17} /><span>계정, 학원별 데이터 분리, 직원 권한은 아직 연결되지 않았습니다.</span></div></section></>}
+      {page === "academy" && <><PageHeading eyebrow="ACADEMY SETTINGS" title="학원 정보" description="학원 정보와 직원 참여에 필요한 고유번호를 확인하세요." /><section className="panel"><div className="panel-heading"><div><h2>{academy.name}</h2><p>학원 고유번호</p><strong>{academy.number}</strong></div></div><p>직원에게 이 번호와 원장이 발급한 일회용 초대번호를 함께 알려 주세요.</p></section></>}
+      {page === "permissions" && <><PageHeading eyebrow="ACADEMY SETTINGS" title={labels[page]} description="논의한 기능을 차근차근 연결하고 있습니다." /><section className="panel placeholder-panel"><Empty title={`${labels[page]} 기능을 준비하고 있어요`} text="이 화면은 메뉴 구성 확인을 위한 자리입니다. 실제 데이터 저장이나 업무 처리는 아직 지원하지 않습니다." /><div className="placeholder-info"><CircleAlert size={17} /><span>세부 직원 권한 설정은 아직 지원하지 않습니다.</span></div></section></>}
       <footer className="footer"><Logo /><span>학원 관리의 시작, 유클리온과 함께.</span><small>로그인 후 학원 데이터 관리</small></footer>
     </main>
   </div>;
