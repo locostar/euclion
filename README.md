@@ -29,6 +29,8 @@ npm run build:cf
 
 이 앱은 로그인·D1 데이터베이스를 사용하는 동적 Next.js 앱입니다. **Cloudflare Pages의 `pages.dev` 정적 사이트로 배포하지 않습니다.** Cloudflare Workers Builds로 GitHub 저장소를 연결하세요. `pages.dev` 주소에서 404가 표시되면 Pages 프로젝트가 이 Worker 앱을 제공하고 있지 않다는 뜻입니다. Worker의 기본 주소는 `<worker-name>.<account-subdomain>.workers.dev`이며, 필요하면 별도의 도메인을 연결할 수 있습니다.
 
+Pages Functions 자체는 D1 바인딩을 지원하지만, 현재 앱은 OpenNext로 빌드한 Next.js 서버와 API를 Cloudflare Worker에서 실행합니다. Pages의 정적 사이트로 주소만 바꾸면 로그인·API·D1 서버 코드가 동작하지 않으며, Pages Functions를 사용하려면 서버 아키텍처와 배포 방식을 옮겨야 합니다. `pages.dev` 도메인으로 바꾸는 것만으로는 Worker나 D1이 더 빨라지지 않습니다.
+
 ### 최초 1회 설정
 
 1. Cloudflare 대시보드의 **Workers & Pages → D1 SQL Database**에서 이름이 `euclion`인 데이터베이스를 만듭니다. 데이터베이스의 UUID를 복사해 저장소의 `wrangler.jsonc`에 있는 `d1_databases` 항목에 `"database_id": "<복사한 UUID>"`를 추가하고 변경을 push합니다. 이 UUID는 비밀값은 아니지만 Cloudflare 계정별로 다릅니다.

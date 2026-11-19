@@ -36,28 +36,25 @@ export async function getAcademyContext(
     };
   }
 
-  const activeOrganization = await env.DB.prepare(
-    `SELECT active_organization_id
-     FROM session
-     WHERE id = ? AND user_id = ? AND expires_at > ?
+  const membership = await env.DB.prepare(
+    `SELECT s.active_organization_id, m.role
+     FROM session s
+     LEFT JOIN member m
+       ON m.organization_id = s.active_organization_id
+      AND m.user_id = s.user_id
+     WHERE s.id = ? AND s.user_id = ? AND s.expires_at > ?
      LIMIT 1`,
   )
     .bind(session.session.id, session.user.id, Date.now())
-    .first<{ active_organization_id: string | null }>();
-  const organizationId = activeOrganization?.active_organization_id;
+    .first<{ active_organization_id: string | null; role: string | null }>();
+  const organizationId = membership?.active_organization_id;
   if (!organizationId) {
     return {
       response: apiError(409, "ACADEMY_REQUIRED", "학원을 먼저 등록해 주세요."),
     };
   }
 
-  const membership = await env.DB.prepare(
-    "SELECT role FROM member WHERE organization_id = ? AND user_id = ? LIMIT 1",
-  )
-    .bind(organizationId, session.user.id)
-    .first<{ role: string }>();
-
-  if (!membership) {
+  if (!membership?.role) {
     return {
       response: apiError(403, "ACADEMY_ACCESS_DENIED", "학원 접근 권한이 없습니다."),
     };

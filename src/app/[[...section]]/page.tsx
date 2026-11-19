@@ -377,22 +377,41 @@ function Dashboard({ academy, user }: {
 
   const reloadData = useCallback(async () => {
     try {
-      const overview = await requestJson<{ students: StudentApi[]; classes: ClassApi[] }>("/api/overview");
+      const dashboardQuery = page === "dashboard" && billingQueryPeriod
+        ? `?include=dashboard&period=${encodeURIComponent(billingQueryPeriod)}`
+        : "";
+      const overview = await requestJson<{
+        students: StudentApi[];
+        classes: ClassApi[];
+        billingCharges?: BillingCharge[];
+        seatOccupancies?: SeatOccupancy[];
+        seatPrices?: SeatPrice[];
+      }>(`/api/overview${dashboardQuery}`);
       setStudents(overview.students.map(toStudent));
       setClasses(overview.classes.map(toClassroom));
       setAttendanceClass((current) => current || overview.classes[0]?.id || "");
+      if (page === "dashboard") {
+        if (!overview.billingCharges || !overview.seatOccupancies || !overview.seatPrices) {
+          throw new Error("대시보드 정보를 모두 불러오지 못했습니다.");
+        }
+        setBillingCharges(overview.billingCharges);
+        setSeatOccupancies(overview.seatOccupancies);
+        setSeatPrices(Object.fromEntries(
+          overview.seatPrices.map((price) => [`${price.room_number}:${price.seat_number}`, price.monthly_fee]),
+        ));
+      }
       setRosterLoaded(true);
       setDataError("");
     } catch (caught) {
       setDataError(caught instanceof Error ? caught.message : "학원 정보를 불러오지 못했습니다.");
     }
-  }, []);
+  }, [billingQueryPeriod, page]);
 
   useEffect(() => {
-    if (!needsRoster || rosterLoaded) return;
+    if (!needsRoster || rosterLoaded || (page === "dashboard" && !billingQueryPeriod)) return;
     const timer = window.setTimeout(() => { void reloadData(); }, 0);
     return () => window.clearTimeout(timer);
-  }, [needsRoster, rosterLoaded, reloadData]);
+  }, [billingQueryPeriod, needsRoster, page, rosterLoaded, reloadData]);
 
   useEffect(() => {
     const studentId = selectedLearningStudent?.id;
@@ -451,7 +470,7 @@ function Dashboard({ academy, user }: {
 
   useEffect(() => {
     if (
-      !["dashboard", "billing", "payments"].includes(page) ||
+      !["billing", "payments"].includes(page) ||
       !billingQueryPeriod
     ) return;
 
@@ -485,7 +504,7 @@ function Dashboard({ academy, user }: {
   }, []);
 
   useEffect(() => {
-    if (!["dashboard", "seats"].includes(page)) return;
+    if (page !== "seats") return;
     let active = true;
     const refresh = () => {
       if (document.visibilityState !== "visible") return;
@@ -496,12 +515,12 @@ function Dashboard({ academy, user }: {
       });
     };
     refresh();
-    const timer = page === "seats" ? window.setInterval(refresh, 15_000) : undefined;
-    if (page === "seats") document.addEventListener("visibilitychange", refresh);
+    const timer = window.setInterval(refresh, 15_000);
+    document.addEventListener("visibilitychange", refresh);
     return () => {
       active = false;
-      if (timer !== undefined) window.clearInterval(timer);
-      if (page === "seats") document.removeEventListener("visibilitychange", refresh);
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", refresh);
     };
   }, [page, reloadSeats]);
 

@@ -1,4 +1,6 @@
-import { getAcademyContext, apiJson } from "@/lib/api-context";
+import { getAcademyContext, apiError, apiJson } from "@/lib/api-context";
+import { isSameDateInTimeZone } from "@/lib/date-utils";
+import { isBillingPeriod } from "@/lib/request-validation";
 
 type StudentRow = {
   id: string;
@@ -38,13 +40,52 @@ type ClassRow = {
   student_count: number;
 };
 
+type BillingChargeRow = {
+  id: string;
+  student_id: string;
+  student_name: string;
+  billing_period: string;
+  amount: number;
+  due_date: string;
+  status: "unpaid" | "paid";
+  paid_at: number | null;
+  memo: string | null;
+};
+
+type SeatRow = {
+  id: string;
+  room_number: number;
+  seat_number: number;
+  student_id: string | null;
+  student_name: string;
+  school: string | null;
+  grade: string | null;
+  gender: "male" | "female" | null;
+  status: "present" | "absent" | "exited";
+  entered_at: number;
+  total_duration_ms: number;
+  monthly_fee: number;
+  is_demo: number;
+};
+
+type SeatPriceRow = {
+  room_number: number;
+  seat_number: number;
+  monthly_fee: number;
+};
+
 export async function GET(request: Request) {
   const result = await getAcademyContext(request);
   if ("response" in result) return result.response;
+  const url = new URL(request.url);
+  const includeDashboard = url.searchParams.get("include") === "dashboard";
+  const period = url.searchParams.get("period") ?? "";
+  if (includeDashboard && !isBillingPeriod(period)) {
+    return apiError(400, "INVALID_BILLING_PERIOD", "청구 월을 선택해 주세요.");
+  }
 
-  const [studentRows, classRows] = await Promise.all([
-    result.context.env.DB.prepare(
-      `SELECT s.id, s.name, s.birth_date, s.phone, s.guardian_phone,
+  const studentRowsPromise = result.context.env.DB.prepare(
+    `SELECT s.id, s.name, s.birth_date, s.phone, s.guardian_phone,
               s.gender, s.school, s.grade, s.graduated_school, s.address,
               s.enrolled_on, s.status, s.fingerprint_status,
               s.monthly_tuition_adjustment, s.tuition_adjustment_reason, s.memo, cs.class_id,
@@ -83,9 +124,9 @@ export async function GET(request: Request) {
        ORDER BY s.created_at DESC, s.name`,
     )
       .bind(result.context.organizationId)
-      .all<StudentRow>(),
-    result.context.env.DB.prepare(
-      `SELECT c.id, c.name, c.subject, c.teacher, c.grade, c.capacity, c.monthly_fee,
+      .all<StudentRow>();
+  const classRowsPromise = result.context.env.DB.prepare(
+    `SELECT c.id, c.name, c.subject, c.teacher, c.grade, c.capacity, c.monthly_fee,
               c.room, c.starts_on, c.ends_on, c.memo,
               COUNT(CASE WHEN s.status = 'active' THEN 1 END) AS student_count
        FROM classes c
@@ -98,7 +139,50 @@ export async function GET(request: Request) {
        ORDER BY c.created_at DESC, c.name`,
     )
       .bind(result.context.organizationId)
-      .all<ClassRow>(),
+      .all<ClassRow>();
+  const dashboardDataPromise = includeDashboard
+    ? Promise.all([
+        result.context.env.DB.prepare(
+          `SELECT tc.id, tc.student_id, s.name AS student_name,
+                  tc.billing_period, tc.amount, tc.due_date, tc.status,
+                  tc.paid_at, tc.memo
+           FROM tuition_charges tc
+           INNER JOIN students s
+             ON s.id = tc.student_id AND s.organization_id = tc.organization_id
+           WHERE tc.organization_id = ? AND tc.billing_period = ?
+           ORDER BY tc.due_date, s.name`,
+        )
+          .bind(result.context.organizationId, period)
+          .all<BillingChargeRow>(),
+        result.context.env.DB.prepare(
+          `SELECT so.id, so.room_number, so.seat_number, so.student_id,
+                  CASE WHEN so.student_id IS NOT NULL THEN s.name ELSE so.student_name END AS student_name,
+                  CASE WHEN so.student_id IS NOT NULL THEN s.school ELSE so.school END AS school,
+                  CASE WHEN so.student_id IS NOT NULL THEN s.grade ELSE so.grade END AS grade,
+                  s.gender, so.status, so.entered_at, so.total_duration_ms,
+                  so.monthly_fee, so.is_demo
+           FROM seat_occupancy so
+           LEFT JOIN students s
+             ON s.id = so.student_id AND s.organization_id = so.organization_id
+           WHERE so.organization_id = ?
+           ORDER BY so.room_number, so.seat_number`,
+        )
+          .bind(result.context.organizationId)
+          .all<SeatRow>(),
+        result.context.env.DB.prepare(
+          `SELECT room_number, seat_number, monthly_fee
+           FROM seat_pricing
+           WHERE organization_id = ?
+           ORDER BY room_number, seat_number`,
+        )
+          .bind(result.context.organizationId)
+          .all<SeatPriceRow>(),
+      ])
+    : Promise.resolve(null);
+  const [studentRows, classRows, dashboardData] = await Promise.all([
+    studentRowsPromise,
+    classRowsPromise,
+    dashboardDataPromise,
   ]);
 
   const students = new Map<string, Omit<StudentRow, "class_id"> & { classIds: string[] }>();
@@ -129,8 +213,31 @@ export async function GET(request: Request) {
     students.set(row.id, student);
   }
 
-  return apiJson({
+  const response: {
+    students: (Omit<StudentRow, "class_id"> & { classIds: string[] })[];
+    classes: ClassRow[];
+    billingCharges?: BillingChargeRow[];
+    seatOccupancies?: (Omit<SeatRow, "is_demo"> & { is_demo: boolean })[];
+    seatPrices?: SeatPriceRow[];
+  } = {
     students: [...students.values()],
     classes: classRows.results,
-  });
+  };
+
+  if (dashboardData) {
+    const now = Date.now();
+    response.billingCharges = dashboardData[0].results;
+    response.seatOccupancies = dashboardData[1].results.map((row) => {
+      const sameDay = isSameDateInTimeZone(row.entered_at, now, "Asia/Seoul");
+      return {
+        ...row,
+        status: sameDay ? row.status : "absent",
+        total_duration_ms: sameDay ? row.total_duration_ms : 0,
+        is_demo: Boolean(row.is_demo),
+      };
+    });
+    response.seatPrices = dashboardData[2].results;
+  }
+
+  return apiJson(response);
 }
