@@ -184,7 +184,7 @@ export function StaffManagement({
         ) : <p className="staff-loading">학원 직원이 없습니다.</p>}
       </section>
       <section className="panel staff-list-panel">
-        <div className="panel-heading"><div><h2>초대 대기</h2><p>수락 전이거나 만료된 초대를 확인하고 관리합니다.</p></div><button className="button button-outline staff-refresh" onClick={() => void reload()} disabled={loading}><RefreshCw size={14} />새로고침</button></div>
+        <div className="panel-heading"><div><h2>기존 이메일 초대</h2><p>이전에 이메일로 보낸 초대를 확인하고 관리합니다. 초대번호는 이 목록에 표시되지 않습니다.</p></div><button className="button button-outline staff-refresh" onClick={() => void reload()} disabled={loading}><RefreshCw size={14} />새로고침</button></div>
         {loading ? <p className="staff-loading">초대 목록을 불러오고 있습니다.</p> : staff.invitations.length ? (
           <div className="table-wrap"><table><thead><tr><th>이메일</th><th>초대 직급</th><th>상태</th><th>만료일</th><th>관리</th></tr></thead><tbody>
             {staff.invitations.map((invitation) => {
@@ -200,7 +200,7 @@ export function StaffManagement({
               </tr>;
             })}
           </tbody></table></div>
-        ) : <div className="empty staff-empty"><h3>대기 중인 초대가 없습니다</h3><p>초대를 보내면 이곳에서 수락 여부와 만료일을 확인할 수 있습니다.</p></div>}
+        ) : <div className="empty staff-empty"><h3>대기 중인 이메일 초대가 없습니다</h3><p>새 직원은 위의 학원 고유번호와 초대번호로 참여할 수 있습니다.</p></div>}
       </section>
     </>
   );
