@@ -68,8 +68,8 @@ export function DashboardCards({ cards }: { cards: Record<CardId, { title: strin
     {error && <p className="error-message" role="alert">{error}</p>}
     <div className="dashboard-card-grid">
       {layout.map((card, index) => <div key={card.id} data-dashboard-card={card.id} className={`dashboard-card-wrap dashboard-card-${card.size}${dragged === card.id ? " dashboard-card-dragging" : ""}`}
-        onDragOver={(event) => { if (editing && dragged && !saving) event.preventDefault(); }}
-        onDrop={(event) => { event.preventDefault(); if (dragged && !saving) move(layout.findIndex((item) => item.id === dragged), index); setDragged(null); }}>
+        onDragOver={(event) => { if (editing && !saving) { event.preventDefault(); event.dataTransfer.dropEffect = "move"; } }}
+        onDrop={(event) => { event.preventDefault(); const source = event.dataTransfer.getData("text/plain"); const sourceIndex = layout.findIndex((item) => item.id === source); if (!saving && sourceIndex >= 0) move(sourceIndex, index); setDragged(null); }}>
         {editing && <div className="dashboard-card-controls">
           <span draggable={!saving} onDragStart={(event) => { setDragged(card.id); event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", card.id); }} onDragEnd={() => setDragged(null)}
             onPointerDown={(event) => { if (event.pointerType !== "mouse" && !saving) { event.currentTarget.setPointerCapture(event.pointerId); setDragged(card.id); } }}
