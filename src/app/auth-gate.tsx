@@ -1,11 +1,15 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import { ArrowRight, LoaderCircle, LockKeyhole, Sparkles } from "lucide-react";
 import { authClient } from "@/lib/auth-client";
 
 type Academy = { id: string; name: string; role: string } | null;
 type AuthenticatedUser = { name: string; email: string };
+type AcademyResult =
+  | { kind: "success"; academy: Academy; sessionId: string }
+  | { kind: "unauthenticated" }
+  | { kind: "error"; message: string };
 type AcademyRole = "owner" | "admin" | "member";
 const signupRoleStorageKey = "euclion.signup.role";
 const roleLabels: Record<AcademyRole, string> = {
@@ -13,6 +17,21 @@ const roleLabels: Record<AcademyRole, string> = {
   admin: "관리자",
   member: "팀원",
 };
+
+async function loadAcademy(): Promise<AcademyResult> {
+  try {
+    const response = await fetch("/api/academy");
+    if (response.status === 401) return { kind: "unauthenticated" };
+    const result = await response.json() as { academy?: Academy; sessionId?: string; error?: { message?: string } };
+    if (!response.ok) throw new Error(result.error?.message ?? "학원 정보를 불러오지 못했습니다.");
+    if (!result.sessionId || result.academy === undefined) {
+      throw new Error("학원 정보를 올바르게 불러오지 못했습니다.");
+    }
+    return { kind: "success", academy: result.academy, sessionId: result.sessionId };
+  } catch (caught) {
+    return { kind: "error", message: caught instanceof Error ? caught.message : "학원 정보를 불러오지 못했습니다." };
+  }
+}
 
 function Logo() {
   return <div className="brand auth-brand"><span className="brand-mark"><span /></span><span>euclion<span className="brand-dot">.</span></span></div>;
@@ -133,11 +152,12 @@ export function AuthGate({
 }: {
   children: (academy: NonNullable<Academy>, user: AuthenticatedUser) => React.ReactNode;
 }) {
-  const { data: session, isPending, refetch } = authClient.useSession();
+  const { data: session, isPending, error: sessionError, refetch } = authClient.useSession();
   const [academy, setAcademy] = useState<Academy>(null);
   const [academyLoadedFor, setAcademyLoadedFor] = useState("");
   const [academyError, setAcademyError] = useState("");
   const [academyRefresh, setAcademyRefresh] = useState(0);
+  const academyRequest = useRef<Promise<AcademyResult> | null>(null);
   const sessionId = session?.session.id;
   const academyRequestKey = sessionId
     ? `${sessionId}:${academyRefresh}`
@@ -145,35 +165,46 @@ export function AuthGate({
   const academyLoaded = academyLoadedFor === academyRequestKey;
 
   useEffect(() => {
-    if (!sessionId) return;
+    if (!isPending && !sessionId) {
+      academyRequest.current = null;
+      return;
+    }
 
     let active = true;
-    fetch("/api/academy")
-      .then(async (response) => {
-        const result = await response.json() as { academy?: Academy; error?: { message?: string } };
-        if (!response.ok) throw new Error(result.error?.message ?? "학원 정보를 불러오지 못했습니다.");
-        return result.academy ?? null;
-      })
-      .then((value) => {
-        if (active) {
-          setAcademy(value);
+    const request = academyRequest.current ?? loadAcademy();
+    academyRequest.current = request;
+    if (sessionId) {
+      void (async () => {
+        let result = await request;
+        if (!active) return;
+        if (result.kind === "unauthenticated" || (result.kind === "success" && result.sessionId !== sessionId)) {
+          academyRequest.current = loadAcademy();
+          result = await academyRequest.current;
+        }
+        if (!active) return;
+        if (result.kind === "success" && result.sessionId === sessionId) {
+          setAcademy(result.academy);
           setAcademyError("");
-          setAcademyLoadedFor(`${sessionId}:${academyRefresh}`);
+        } else {
+          setAcademyError(result.kind === "error" ? result.message : "로그인 상태가 변경되었습니다. 다시 시도해 주세요.");
         }
-      })
-      .catch((caught: unknown) => {
-        if (active) {
-          setAcademyError(caught instanceof Error ? caught.message : "학원 정보를 불러오지 못했습니다.");
-          setAcademyLoadedFor(`${sessionId}:${academyRefresh}`);
-        }
-      });
+        setAcademyLoadedFor(`${sessionId}:${academyRefresh}`);
+      })();
+    }
     return () => { active = false; };
-  }, [sessionId, academyRefresh]);
+  }, [sessionId, isPending, academyRefresh]);
+
+  const refreshAcademy = () => {
+    academyRequest.current = null;
+    void refetch();
+    setAcademyRefresh((current) => current + 1);
+  };
 
   if (isPending) return <AuthCard><div className="auth-loading"><LoaderCircle className="spin" size={24} />계정 정보를 확인하고 있어요.</div></AuthCard>;
+  if (sessionError) return <AuthCard><div className="auth-content"><h1>계정 정보를 확인하지 못했어요</h1><p>{sessionError.status === 429 ? "요청이 너무 많습니다. 잠시 후 다시 시도해 주세요." : "연결 상태를 확인한 후 다시 시도해 주세요."}</p><button className="button button-primary auth-submit" onClick={refreshAcademy}>다시 시도하기</button></div></AuthCard>;
   if (!session) return <AuthCard><AuthForm /></AuthCard>;
   if (!academyLoaded) return <AuthCard><div className="auth-loading"><LoaderCircle className="spin" size={24} />학원 정보를 불러오고 있어요.</div></AuthCard>;
-  if (academyError) return <AuthCard><div className="auth-content"><h1>학원 정보를 불러오지 못했어요</h1><p>{academyError}</p><button className="button button-primary auth-submit" onClick={() => { void refetch(); setAcademyRefresh((current) => current + 1); }}>다시 시도하기</button></div></AuthCard>;
-  if (!academy) return <AcademySetup onCreated={() => { void refetch(); setAcademyRefresh((current) => current + 1); }} />;
+  if (academyError) return <AuthCard><div className="auth-content"><h1>학원 정보를 불러오지 못했어요</h1><p>{academyError}</p><button className="button button-primary auth-submit" onClick={refreshAcademy}>다시 시도하기</button></div></AuthCard>;
+  if (!academy) return <AcademySetup onCreated={refreshAcademy} />;
   return children(academy, { name: session.user.name, email: session.user.email });
 }

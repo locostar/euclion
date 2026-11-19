@@ -48,7 +48,7 @@ export async function GET(request: Request) {
     }
   }
 
-  return apiJson({ academy: result });
+  return apiJson({ academy: result, sessionId: session.session.id });
 }
 
 export async function POST(request: Request) {
