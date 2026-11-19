@@ -6,7 +6,7 @@ import {
   Fingerprint, Menu, MessageSquareText, Plus, Search, Sparkles, Trash2,
   UsersRound, WalletCards, X,
 } from "lucide-react";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { startTransition, useCallback, useEffect, useMemo, useState, useSyncExternalStore, type FormEvent, type ReactNode } from "react";
 import { AuthGate } from "../auth-gate";
 import { authClient } from "@/lib/auth-client";
@@ -106,6 +106,12 @@ function pagePath(page: Page, studentId: string | null = null, editingId: string
   if (page === "attendance-list") return "/attendance/history";
   if (page === "billing-settings") return "/billing/settings";
   return `/${page}`;
+}
+
+function navigateWithinWorkspace(path: string) {
+  if (window.location.pathname !== path || window.location.search || window.location.hash) {
+    window.history.pushState(null, "", path);
+  }
 }
 
 function Logo() {
@@ -302,7 +308,6 @@ function Dashboard({ academy, user }: {
   user: { name: string; email: string };
 }) {
   const pathname = usePathname();
-  const router = useRouter();
   const currentDate = useSyncExternalStore(subscribeDate, today, () => "");
   const page = routePage(pathname);
   const [students, setStudents] = useState<Student[]>([]);
@@ -613,14 +618,14 @@ function Dashboard({ academy, user }: {
       setClassForm(emptyClass());
       setClassEditing(null);
     }
-    router.push(pagePath(next), { scroll: false });
+    navigateWithinWorkspace(pagePath(next));
     setMobileOpen(false);
     setNoticeOpen(false);
     setError("");
     setMessage("");
   };
   const showStudent = (id: string) => {
-    router.push(pagePath("students", id), { scroll: false });
+    navigateWithinWorkspace(pagePath("students", id));
     setMobileOpen(false);
     setError("");
     setMessage("");
@@ -714,7 +719,7 @@ function Dashboard({ academy, user }: {
       await reloadData();
       setEditing(null);
       setFingerprintRequested(false);
-      router.push(pagePath("students", saved.id), { scroll: false });
+      navigateWithinWorkspace(pagePath("students", saved.id));
       setMessage(`학생 정보를 저장했습니다.${fingerprintMessage}`);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "학생 정보를 저장하지 못했습니다.");
@@ -739,7 +744,7 @@ function Dashboard({ academy, user }: {
     setEditing(id);
     setFingerprintRequested(false);
     setMessage("");
-    router.push(pagePath("student-new", null, id), { scroll: false });
+    navigateWithinWorkspace(pagePath("student-new", null, id));
   }
   async function requestFingerprint(studentId: string) {
     setSavingFingerprint(true);
@@ -839,7 +844,7 @@ function Dashboard({ academy, user }: {
     setClassEditing(classroom.id);
     setError("");
     setMessage("");
-    router.push(`/classes/${encodeURIComponent(classroom.id)}/edit`, { scroll: false });
+    navigateWithinWorkspace(`/classes/${encodeURIComponent(classroom.id)}/edit`);
   }
   async function deleteClass(classroom: ClassRoom) {
     if (!window.confirm(
