@@ -74,6 +74,23 @@ test("academy numbers and one-time codes safely enroll staff", async () => {
       return result.code;
     }
 
+    for (let i = 0; i < 30; i++) {
+      const sessionResponse = await call("/api/auth/get-session", undefined, null, "192.0.2.100");
+      assert.equal(sessionResponse.status, 200, `session request ${i + 1}`);
+    }
+    let limited = await call("/api/auth/get-session", undefined, null, "192.0.2.100");
+    assert.equal(limited.status, 429);
+    await db.prepare("UPDATE rateLimit SET lastRequest = ? WHERE key = ?")
+      .bind(Date.now() - 61_000, "192.0.2.100|/get-session").run();
+    limited = await call("/api/auth/get-session", undefined, null, "192.0.2.100");
+    assert.equal(limited.status, 200);
+    for (let i = 0; i < 3; i++) {
+      const signIn = await call("/api/auth/sign-in/email", { email: "missing@example.test", password: "wrong-password-1234" }, null, "192.0.2.101");
+      assert.notEqual(signIn.status, 429);
+    }
+    const signInLimited = await call("/api/auth/sign-in/email", { email: "missing@example.test", password: "wrong-password-1234" }, null, "192.0.2.101");
+    assert.equal(signInLimited.status, 429);
+
     const owner = await signup("owner@example.test", "192.0.2.1");
     let response = await call("/api/academy", { name: "Test" }, owner);
     assert.equal(response.status, 201, await response.clone().text());

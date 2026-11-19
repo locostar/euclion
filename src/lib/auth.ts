@@ -58,6 +58,9 @@ export function createAuth(env: CloudflareEnv) {
       storage: "database",
       window: 60,
       max: 10,
+      customRules: {
+        "/get-session": { window: 60, max: 30 },
+      },
     },
     advanced: {
       database: { generateId: "uuid" },
