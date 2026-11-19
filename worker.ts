@@ -3,22 +3,7 @@ import { default as handler } from "./.open-next/worker.js";
 import { createDueMonthlyTuitionCharges } from "./src/lib/recurring-billing";
 
 export default {
-  async fetch(request, env, ctx) {
-    const response = await handler.fetch(request, env, ctx);
-    if (
-      response.ok &&
-      new URL(request.url).pathname.startsWith("/_next/static/")
-    ) {
-      const headers = new Headers(response.headers);
-      headers.set("Cache-Control", "public, max-age=31536000, immutable");
-      return new Response(response.body, {
-        status: response.status,
-        statusText: response.statusText,
-        headers,
-      });
-    }
-    return response;
-  },
+  fetch: handler.fetch,
   async scheduled(controller, env) {
     const dateParts = new Intl.DateTimeFormat("en", {
       timeZone: "Asia/Seoul",
