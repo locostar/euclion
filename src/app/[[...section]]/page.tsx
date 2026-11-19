@@ -11,6 +11,7 @@ import { startTransition, useCallback, useEffect, useMemo, useState, useSyncExte
 import { AuthGate } from "../auth-gate";
 import { authClient } from "@/lib/auth-client";
 import { DEFAULT_GUARDIAN_REMINDER } from "@/lib/guardian-reminder";
+import { StaffManagement } from "../staff-management";
 
 type Page = "dashboard" | "students" | "withdrawn-students" | "student-new" | "consultations" | "classes" | "class-new" | "schedule" | "attendance" | "attendance-list" | "seats" | "billing" | "billing-settings" | "payments" | "academy" | "staff" | "permissions";
 type Student = {
@@ -1349,7 +1350,8 @@ function Dashboard({ academy, user }: {
           </>}
         </>}
       </>}
-      {(["schedule", "academy", "staff", "permissions"] as Page[]).includes(page) && <><PageHeading eyebrow={page === "schedule" ? "CLASS MANAGEMENT" : "ACADEMY SETTINGS"} title={labels[page]} description="논의한 기능을 차근차근 연결하고 있습니다." /><section className="panel placeholder-panel"><Empty title={`${labels[page]} 기능을 준비하고 있어요`} text="이 화면은 메뉴 구성 확인을 위한 자리입니다. 실제 데이터 저장이나 업무 처리는 아직 지원하지 않습니다." /><div className="placeholder-info"><CircleAlert size={17} /><span>{page === "schedule" ? "수업 일정과 휴강 처리 방식은 아직 정해지지 않았습니다." : "계정, 학원별 데이터 분리, 직원 권한은 아직 연결되지 않았습니다."}</span></div></section></>}
+      {page === "staff" && <StaffManagement academyName={academy.name} currentUserEmail={user.email} currentRole={academy.role} />}
+      {(["schedule", "academy", "permissions"] as Page[]).includes(page) && <><PageHeading eyebrow={page === "schedule" ? "CLASS MANAGEMENT" : "ACADEMY SETTINGS"} title={labels[page]} description="논의한 기능을 차근차근 연결하고 있습니다." /><section className="panel placeholder-panel"><Empty title={`${labels[page]} 기능을 준비하고 있어요`} text="이 화면은 메뉴 구성 확인을 위한 자리입니다. 실제 데이터 저장이나 업무 처리는 아직 지원하지 않습니다." /><div className="placeholder-info"><CircleAlert size={17} /><span>{page === "schedule" ? "수업 일정과 휴강 처리 방식은 아직 정해지지 않았습니다." : "계정, 학원별 데이터 분리, 직원 권한은 아직 연결되지 않았습니다."}</span></div></section></>}
       <footer className="footer"><Logo /><span>학원 관리의 시작, 유클리온과 함께.</span><small>로그인 후 학원 데이터 관리</small></footer>
     </main>
   </div>;

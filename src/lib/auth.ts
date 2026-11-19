@@ -2,7 +2,7 @@ import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { drizzle } from "drizzle-orm/d1";
 import * as authSchema from "@/db/auth-schema";
-import { authPlugins } from "./auth-plugins";
+import { createAuthPlugins } from "./auth-plugins";
 import { sendEmail } from "./email";
 
 function requireEnvironmentValue(name: string, value: string) {
@@ -31,7 +31,7 @@ export function createAuth(env: CloudflareEnv) {
       provider: "sqlite",
       schema: authSchema,
     }),
-    plugins: authPlugins,
+    plugins: createAuthPlugins(env, baseURL),
     emailAndPassword: {
       enabled: true,
       minPasswordLength: 12,

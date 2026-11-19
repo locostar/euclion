@@ -36,9 +36,9 @@ npm run build:cf
 3. Worker의 **Settings → Variables and Secrets**에서 다음 항목을 설정합니다.
    - `BETTER_AUTH_URL`: `wrangler.jsonc`에 설정된 Worker URL (`https://euclion.locostartt.workers.dev`)
    - `BETTER_AUTH_SECRET`: 안전하게 생성한 32자 이상의 무작위 비밀값 (Secret)
-   - `RESEND_API_KEY`: 비밀번호 재설정 메일을 사용할 경우 Resend API 키 (Secret)
-   - `RESEND_FROM`: 비밀번호 재설정 메일을 사용할 경우 Resend에서 인증한 발신 주소
-4. 현재 가입과 로그인은 이메일 확인 없이 진행됩니다. Resend 메일 설정은 비밀번호 재설정 메일을 사용할 때 필요합니다.
+   - `RESEND_API_KEY`: 직원 초대 이메일 및 비밀번호 재설정 메일을 보낼 Resend API 키 (Secret)
+   - `RESEND_FROM`: Resend에서 인증한 발신 주소
+4. 가입과 로그인은 이메일 확인 없이 진행됩니다. 직원 초대 및 비밀번호 재설정 메일을 사용하려면 Resend 설정이 필요합니다.
 5. Worker Builds의 빌드 설정을 다음처럼 지정합니다.
    - **Build command:** `npm run build:cf && npm run db:migrate:remote`
    - **Deploy command:** `npx wrangler deploy`
@@ -64,7 +64,7 @@ npm run preview
 
 ## 현재 범위와 운영 전 확인
 
-- 이메일과 비밀번호로 가입·로그인할 수 있으며, 이메일 확인은 요구하지 않습니다. 가입 시 원장·관리자·팀원을 선택할 수 있고 현재 세 직급은 같은 권한을 가집니다. 학원별 데이터 분리는 유지되며 직원 초대와 기존 학원 합류는 아직 지원하지 않습니다.
+- 이메일과 비밀번호로 가입·로그인할 수 있으며, 이메일 확인은 요구하지 않습니다. 가입 시 원장·관리자·팀원을 선택할 수 있고 현재 세 직급은 같은 권한을 가집니다. 직원 관리에서 이메일 초대를 보내면 기존 계정이나 새 계정으로 기존 학원에 합류할 수 있으며, 초대 취소와 직원 강제 제거도 지원합니다. 직원 제거는 학원 구성원 자격만 해제하며 로그인 계정은 삭제하지 않습니다. 초대 발송에는 Resend 설정이 필요합니다.
 - 학생 학교·학년·성별을 별도 저장합니다. 학년은 고1~고3, 재수, 삼수, N수를 지원하며, 퇴원 학생은 학생 목록과 별도의 보관 화면에서 확인할 수 있습니다. 재수·삼수·N수 학생은 현재 학교 입력이 선택이며, 메모도 선택 사항입니다. 실제 결제·환불 처리는 지원하지 않습니다.
 - 좌석 배치도는 8개 방 64석입니다. 미배정 재원 학생 목록에서 이름을 선택한 뒤 성별에 맞는 빈 좌석을 누르면 배정되며, 홀수 방은 남학생, 짝수 방은 여학생 전용입니다. API에서도 성별과 방 번호를 검증하며, 퇴원 처리 시 좌석을 자동으로 비웁니다. 송도권 학교 이름을 사용하는 가상 더미 좌석 데이터도 추가·삭제할 수 있습니다. 더미 이름은 실제 학생 정보가 아닙니다. 학교 이름은 [송도고등학교](https://www.schoolinfo.go.kr/ei/ss/Pneiss_b01_s0.do?SHL_IDF_CD=f2957c99-73ef-4ce9-a60e-5d7850d3796c), [인천해송고등학교](https://www.schoolinfo.go.kr/ei/ss/Pneiss_b01_s0.do?SHL_IDF_CD=eb558cd3-53f1-479e-a8c2-9558e6189014), [인천포스코고등학교](https://www.schoolinfo.go.kr/ei/ss/Pneiss_b01_s0.do?SHL_IDF_CD=cd460ab8-5f2f-465a-bf69-d0093a7c8d41)의 학교알리미 정보를 참고했습니다.
 - 별도 출결 메뉴는 숨기고 좌석 배치도에서 출결 상태를 확인하도록 했습니다. 기존 출결 데이터와 지문 연동용 API는 유지합니다.
