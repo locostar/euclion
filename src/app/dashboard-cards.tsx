@@ -105,7 +105,7 @@ export function DashboardCards({ cards }: { cards: Record<CardId, { title: strin
             move(card.id, layout.findIndex((item) => item.id === target));
             endDrag();
           }}
-          onPointerCancel={endDrag}><Grip size={18} aria-hidden="true" /></button>
+          onPointerCancel={(event) => { if (event.pointerType !== "mouse") endDrag(); }}><Grip size={18} aria-hidden="true" /></button>
         <button type="button" className="dashboard-resize-handle" disabled={!loaded || saving}
           aria-label={`${cards[card.id].title} ${card.size === "small" ? "크게" : "작게"}`}
           title={card.size === "small" ? "카드 크게" : "카드 작게"}
