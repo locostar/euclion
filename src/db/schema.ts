@@ -336,6 +336,28 @@ export const seatOccupancy = sqliteTable(
   ],
 );
 
+export const seatMoveHistory = sqliteTable(
+  "seat_move_history",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id").notNull()
+      .references(() => organization.id, { onDelete: "cascade" }),
+    studentId: text("student_id").notNull(),
+    fromRoom: integer("from_room").notNull(),
+    fromSeat: integer("from_seat").notNull(),
+    toRoom: integer("to_room").notNull(),
+    toSeat: integer("to_seat").notNull(),
+    movedAt: integer("moved_at", { mode: "timestamp_ms" }).notNull(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.studentId, table.organizationId],
+      foreignColumns: [students.id, students.organizationId],
+    }).onDelete("cascade"),
+    index("seat_move_history_student_idx").on(table.organizationId, table.studentId, table.movedAt),
+  ],
+);
+
 export const seatPricing = sqliteTable(
   "seat_pricing",
   {
