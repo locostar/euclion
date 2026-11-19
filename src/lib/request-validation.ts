@@ -154,6 +154,7 @@ export const tuitionChargeInput = z.object({
 export const tuitionChargeStatusInput = z.object({
   chargeId: z.string().min(1).max(80),
   status: z.enum(["unpaid", "paid"]),
+  paymentMethod: z.enum(["card", "cash", "pay", "transfer", "other"]).nullable().optional(),
 });
 
 export const seatAssignmentInput = z.object({

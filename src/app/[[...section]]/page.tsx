@@ -12,8 +12,11 @@ import { AuthGate } from "../auth-gate";
 import { authClient } from "@/lib/auth-client";
 import { DEFAULT_GUARDIAN_REMINDER } from "@/lib/guardian-reminder";
 import { StaffManagement } from "../staff-management";
+import { DashboardCards } from "../dashboard-cards";
+import { SalesAnalysis } from "../sales-analysis";
+import { paymentMethodLabels, type PaymentMethod } from "@/lib/payment-method";
 
-type Page = "dashboard" | "students" | "withdrawn-students" | "student-new" | "consultations" | "classes" | "class-new" | "schedule" | "attendance" | "attendance-list" | "seats" | "billing" | "billing-settings" | "payments" | "academy" | "staff" | "permissions";
+type Page = "dashboard" | "students" | "withdrawn-students" | "student-new" | "consultations" | "classes" | "class-new" | "schedule" | "attendance" | "attendance-list" | "seats" | "billing" | "billing-settings" | "payments" | "sales" | "academy" | "staff" | "permissions";
 type Student = {
   id: string; name: string; birth: string; phone: string; guardian: string; gender: "male" | "female" | "";
   school: string; grade: string; graduatedSchool: string; address: string; enrolled: string; classes: string[];
@@ -52,14 +55,14 @@ type AssessmentRecord = {
 const menus: { label: string; items: [string, Page][] }[] = [
   { label: "학생 관리", items: [["학생 목록", "students"], ["퇴원 학생", "withdrawn-students"], ["신규 학생 등록", "student-new"], ["상담·학습 관리", "consultations"]] },
   { label: "수업 관리", items: [["반 목록", "classes"], ["반 등록", "class-new"], ["모의고사 일정", "schedule"]] },
-  { label: "수강료 관리", items: [["청구 내역", "billing"], ["정기 청구 설정", "billing-settings"], ["납부 내역", "payments"]] },
+  { label: "수강료 관리", items: [["청구 내역", "billing"], ["정기 청구 설정", "billing-settings"], ["납부 내역", "payments"], ["매출 분석", "sales"]] },
   { label: "학원 관리", items: [["학원 정보", "academy"], ["직원 관리", "staff"], ["직원별 권한", "permissions"]] },
 ];
 const labels: Record<Page, string> = {
   dashboard: "대시보드", students: "학생 목록", "withdrawn-students": "퇴원 학생", "student-new": "신규 학생 등록", consultations: "상담·학습 관리",
   classes: "반 목록", "class-new": "반 등록", schedule: "모의고사 일정", attendance: "출결 입력",
   "attendance-list": "출결 조회", seats: "좌석 배치도", billing: "청구 내역", "billing-settings": "정기 청구 설정",
-  payments: "납부·환불 내역", academy: "학원 정보", staff: "직원 관리", permissions: "직원별 권한",
+  payments: "납부·환불 내역", sales: "매출 분석", academy: "학원 정보", staff: "직원 관리", permissions: "직원별 권한",
 };
 const today = () => {
   const date = new Date();
@@ -87,7 +90,7 @@ function routePage(pathname: string): Page {
   if (section === "classes" && (detail === "new" || action === "edit")) return "class-new";
   if (section === "attendance" && detail === "history") return "attendance-list";
   if (section === "billing" && detail === "settings") return "billing-settings";
-  if ((["consultations", "classes", "schedule", "attendance", "seats", "billing", "payments", "academy", "staff", "permissions"] as string[]).includes(section)) {
+  if ((["consultations", "classes", "schedule", "attendance", "seats", "billing", "payments", "sales", "academy", "staff", "permissions"] as string[]).includes(section)) {
     return section as Page;
   }
   return "dashboard";
@@ -186,6 +189,7 @@ type BillingCharge = {
   due_date: string;
   status: "unpaid" | "paid";
   paid_at: number | null;
+  payment_method: PaymentMethod | null;
   memo: string | null;
 };
 type SeatOccupancy = {
@@ -359,6 +363,8 @@ function Dashboard({ academy, user }: {
     memo: "",
   });
   const [savingBilling, setSavingBilling] = useState(false);
+  const [paymentMethods, setPaymentMethods] = useState<Record<string, PaymentMethod | "">>({});
+  const [savingPayment, setSavingPayment] = useState(false);
   const [seatOccupancies, setSeatOccupancies] = useState<SeatOccupancy[]>([]);
   const [seatPrices, setSeatPrices] = useState<Record<string, number>>({});
   const [dashboardTasks, setDashboardTasks] = useState<{ period: string; charges: BillingCharge[]; unseatedCount: number } | null>(null);
@@ -1091,7 +1097,14 @@ function Dashboard({ academy, user }: {
       setSavingBilling(false);
     }
   }
-  async function updateBillingStatus(charge: BillingCharge) {
+  async function updateBillingStatus(charge: BillingCharge, status: "paid" | "unpaid") {
+    const method = paymentMethods[charge.id] ?? charge.payment_method ?? "";
+    if (status === "paid" && !method) {
+      setError("결제 수단을 선택해 주세요.");
+      return;
+    }
+    if (status === "unpaid" && !window.confirm("이 납부 기록을 미납으로 변경할까요? 매출 집계에서도 제외됩니다. 실제 환불은 처리되지 않습니다.")) return;
+    setSavingPayment(true);
     setError("");
     setMessage("");
     try {
@@ -1100,16 +1113,19 @@ function Dashboard({ academy, user }: {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           chargeId: charge.id,
-          status: charge.status === "paid" ? "unpaid" : "paid",
+          status,
+          paymentMethod: status === "paid" ? method : null,
         }),
       });
       const charges = await requestJson<BillingCharge[]>(
         `/api/billing?period=${encodeURIComponent(billingQueryPeriod)}`,
       );
       setBillingCharges(charges);
-      setMessage(charge.status === "paid" ? "미납 상태로 변경했습니다." : "납부 완료로 기록했습니다.");
+      setMessage(status === "unpaid" ? "미납 상태로 변경했습니다. 실제 환불은 처리되지 않았습니다." : "납부 기록을 저장했습니다. 실제 결제는 처리되지 않았습니다.");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "납부 상태를 변경하지 못했습니다.");
+    } finally {
+      setSavingPayment(false);
     }
   }
   async function assignSeat(
@@ -1260,16 +1276,15 @@ function Dashboard({ academy, user }: {
       {page === "dashboard" && <>
         <div className="dashboard-welcome"><div><div className="eyebrow"><span className="eyebrow-dot" /> EUCLION WORKSPACE</div><h1>안녕하세요, {user.name}님 <span>✳</span></h1><p>{academy.name}의 하루를 편리하게 관리해 보세요.</p></div><div className="date-chip"><CalendarDays size={16} /> 오늘 <span>{currentDate ? dateLabel(currentDate) : "—"}</span></div></div>
         <div className="section-title"><div><h2>한눈에 보는 우리 학원</h2><p>학원의 주요 현황을 확인해 보세요.</p></div><span className="sample-label">{dataError ? "갱신 실패 · 이전 정보일 수 있음" : dashboardRefreshing ? "이전 정보 표시 · 갱신 중" : "최근 조회 기준"}</span></div>
-        <div className="stats">
-          <button className="stat-card" onClick={() => go("students")}><div className="stat-top"><span className="stat-icon mint"><UsersRound size={20} /></span><ArrowRight size={17} /></div><div className="stat-label">재원 학생</div><div className="stat-number">{rosterLoaded ? formatNumber(activeStudents.length) : "—"}<small>명</small></div><div className="stat-foot"><span className="green-dot" /> 현재 재원 중인 학생</div></button>
-          <button className="stat-card" onClick={() => go("seats")}><div className="stat-top"><span className="stat-icon blue"><ClipboardCheck size={20} /></span><ArrowRight size={17} /></div><div className="stat-label">오늘 출석한 좌석</div><div className="stat-number">{dashboardTasks?.period === currentDate.slice(0, 7) && currentDate ? formatNumber(seatOccupancies.filter((seat) => seat.status !== "absent").length) : "—"}<small>석</small></div><div className="stat-foot"><span className="blue-dot" /> 좌석 배치도에서 관리</div></button>
-          <button className="stat-card" onClick={() => { setBillingPeriod(""); go("billing"); }}><div className="stat-top"><span className="stat-icon peach"><WalletCards size={20} /></span><ArrowRight size={17} /></div><div className="stat-label">이번 달 미납 수강료</div><div className="stat-number pending-number">{dashboardTasks?.period === currentDate.slice(0, 7) && currentDate ? formatNumber(taskCharges.reduce((total, charge) => total + charge.amount, 0)) : "—"}<small>원</small></div><div className="stat-foot">{dashboardTasks?.period === currentDate.slice(0, 7) && currentDate ? `${formatNumber(taskCharges.length)}건 미납` : dataError ? "내역을 불러오지 못했습니다" : "내역을 불러오고 있어요"}</div></button>
-        </div>
-        <div className="dashboard-grid"><section className="panel quick-panel"><div className="panel-heading"><div><h2>빠른 실행</h2><p>자주 사용하는 업무를 바로 시작하세요.</p></div><span className="panel-icon"><Sparkles size={17} /></span></div>
+        <DashboardCards cards={{
+          students: { title: "재원 학생", content: <button className="stat-card" onClick={() => go("students")}><div className="stat-top"><span className="stat-icon mint"><UsersRound size={20} /></span><ArrowRight size={17} /></div><div className="stat-label">재원 학생</div><div className="stat-number">{rosterLoaded ? formatNumber(activeStudents.length) : "—"}<small>명</small></div><div className="stat-foot"><span className="green-dot" /> 현재 재원 중인 학생</div></button> },
+          attendance: { title: "오늘 출석한 좌석", content: <button className="stat-card" onClick={() => go("seats")}><div className="stat-top"><span className="stat-icon blue"><ClipboardCheck size={20} /></span><ArrowRight size={17} /></div><div className="stat-label">오늘 출석한 좌석</div><div className="stat-number">{dashboardTasks?.period === currentDate.slice(0, 7) && currentDate ? formatNumber(seatOccupancies.filter((seat) => seat.status !== "absent").length) : "—"}<small>석</small></div><div className="stat-foot"><span className="blue-dot" /> 좌석 배치도에서 관리</div></button> },
+          unpaid: { title: "이번 달 미납 수강료", content: <button className="stat-card" onClick={() => { setBillingPeriod(""); go("billing"); }}><div className="stat-top"><span className="stat-icon peach"><WalletCards size={20} /></span><ArrowRight size={17} /></div><div className="stat-label">이번 달 미납 수강료</div><div className="stat-number pending-number">{dashboardTasks?.period === currentDate.slice(0, 7) && currentDate ? formatNumber(taskCharges.reduce((total, charge) => total + charge.amount, 0)) : "—"}<small>원</small></div><div className="stat-foot">{dashboardTasks?.period === currentDate.slice(0, 7) && currentDate ? `${formatNumber(taskCharges.length)}건 미납` : dataError ? "내역을 불러오지 못했습니다" : "내역을 불러오고 있어요"}</div></button> },
+          quick: { title: "빠른 실행", content: <section className="panel quick-panel"><div className="panel-heading"><div><h2>빠른 실행</h2><p>자주 사용하는 업무를 바로 시작하세요.</p></div><span className="panel-icon"><Sparkles size={17} /></span></div>
           <div className="quick-grid">
             {[{ icon: <Plus size={19} />, title: "학생 등록", desc: "새로운 학생 추가", action: startNewStudent, tone: "mint" }, { icon: <UsersRound size={19} />, title: "좌석 배치도", desc: "좌석과 출결 상태 관리", action: () => go("seats"), tone: "blue" }, { icon: <BookOpen size={19} />, title: "반 관리", desc: "운영 중인 반 확인", action: () => go("classes"), tone: "purple" }, { icon: <MessageSquareText size={19} />, title: "상담·학습 관리", desc: "상담 및 시험 성적 추이", action: () => go("consultations"), tone: "peach" }].map((item) => <button className="quick-item" onClick={item.action} key={item.title}><span className={`quick-icon ${item.tone}`}>{item.icon}</span><span><strong>{item.title}</strong><small>{item.desc}</small></span><ChevronRight size={16} /></button>)}
-          </div></section>
-          <section className="panel"><div className="panel-heading"><div><h2>확인이 필요한 업무</h2><p>이번 달 청구와 좌석 배정 현황입니다.</p></div><Bell size={18} className="muted-icon" /></div>
+          </div></section> },
+          tasks: { title: "확인이 필요한 업무", content: <section className="panel"><div className="panel-heading"><div><h2>확인이 필요한 업무</h2><p>이번 달 청구와 좌석 배정 현황입니다.</p></div><Bell size={18} className="muted-icon" /></div>
             {!dashboardTasks || dashboardTasks.period !== currentDate.slice(0, 7) || !currentDate
               ? <div className="dashboard-empty"><strong>{dataError ? "업무 현황을 불러오지 못했습니다." : "업무 현황을 불러오고 있어요."}</strong></div>
               : <div className="dashboard-tasks">
@@ -1278,10 +1293,11 @@ function Dashboard({ academy, user }: {
                 <button onClick={() => go("seats")}><span><strong>좌석 미배정</strong><small>재원 학생 기준</small></span><b>{formatNumber(dashboardTasks.unseatedCount)}명</b><ChevronRight size={16} /></button>
                 <p>지난달 청구는 청구 내역에서 해당 월을 선택해 확인해 주세요. 알림은 자동 발송되지 않습니다.</p>
               </div>}
-          </section>
-        </div>
-        <section className="panel recent-panel"><div className="panel-heading"><div><h2>학생 현황</h2><p>등록된 학생 목록을 확인해 보세요.</p></div><button className="text-link" onClick={() => go("students")}>전체 보기 <ArrowRight size={15} /></button></div><StudentTable students={activeStudents.slice(0, 4)} classNames={classNames} select={showStudent} /></section>
+          </section> },
+          recent: { title: "학생 현황", content: <section className="panel recent-panel"><div className="panel-heading"><div><h2>학생 현황</h2><p>등록된 학생 목록을 확인해 보세요.</p></div><button className="text-link" onClick={() => go("students")}>전체 보기 <ArrowRight size={15} /></button></div><StudentTable students={activeStudents.slice(0, 4)} classNames={classNames} select={showStudent} /></section> },
+        }} />
       </>}
+      {page === "sales" && <SalesAnalysis />}
 
       {page === "students" && selected && <><button className="back-link" onClick={() => go("students")}><ArrowLeft size={16} /> 학생 목록으로</button><PageHeading eyebrow="STUDENT MANAGEMENT" title={selected.name} description={`${selected.status} · 등록일 ${dateLabel(selected.enrolled)}`} action={<div className="student-detail-actions"><Button variant="outline" onClick={() => editStudent(selected)}>정보 수정</Button>{selected.status === "재원" ? <Button variant="outline" onClick={() => void updateStudentStatus(selected, "withdrawn")}>퇴원 처리</Button> : <Button onClick={() => void updateStudentStatus(selected, "active")}>재원 복귀</Button>}</div>} />{message && <div className="success-message">{message}</div>}{error && <p className="error-message" role="alert">{error}</p>}<div className="panel detail-panel"><h2>학생 기본 정보</h2><div className="detail-grid">{[["이름", selected.name], ["성별", selected.gender === "male" ? "남학생" : selected.gender === "female" ? "여학생" : "미지정"], ["생년월일", selected.birth], ["학생 연락처", selected.phone], ["보호자 연락처", selected.guardian], ["학교", selected.school], ["학년·수험 상태", selected.grade], ...(selected.graduatedSchool ? [["졸업 고등학교", selected.graduatedSchool]] : []), ["주소", selected.address], ["등록일", selected.enrolled], ["수강 반", classNames(selected.classes) || "없음"], ["메모", selected.memo]].map(([label, value]) => <div key={label}><span>{label}</span><strong>{value}</strong></div>)}</div></div>{selected.status === "재원" && <div className="detail-note"><CircleAlert size={17} /> 지문 장치 연동 전에는 학생의 좌석 출입 상태가 자동 변경되지 않습니다.</div>}</>}
       {page === "students" && selected && <section className="panel student-tuition-card"><span>월 수강료 합계</span><strong>{formatNumber(selected.monthlyTuition)}원</strong><small>반 {formatNumber(selected.classTuition)}원 + 좌석 {formatNumber(selected.seatTuition)}원 {Number(selected.tuitionAdjustment) >= 0 ? "+" : "−"} 개인 조정 {formatNumber(Math.abs(Number(selected.tuitionAdjustment)))}원</small>{selected.tuitionAdjustmentReason && <small>조정 사유: {selected.tuitionAdjustmentReason}</small>}</section>}
@@ -1400,13 +1416,13 @@ function Dashboard({ academy, user }: {
             if (!visibleCharges.length) {
               return <Empty title={page === "payments" ? "납부 완료 내역이 없습니다" : "이번 달 청구가 없습니다"} text={page === "payments" ? "납부 완료로 기록한 내역이 여기에 표시됩니다." : "청구 등록 버튼으로 학생별 수강료를 추가해 보세요."} />;
             }
-            return <div className="table-wrap"><table><thead><tr><th>학생</th><th>청구 월</th><th>청구 금액</th><th>납부 기한</th><th>상태</th><th>납부일</th>{canManageBilling && <th>관리</th>}</tr></thead><tbody>{visibleCharges.map((charge) => {
+            return <div className="table-wrap"><table><thead><tr><th>학생</th><th>청구 월</th><th>청구 금액</th><th>납부 기한</th><th>상태</th><th>납부일</th>{canManageBilling && <><th>결제 수단</th><th>관리</th></>}</tr></thead><tbody>{visibleCharges.map((charge) => {
               const daysRemaining = daysUntilDue(charge.due_date, currentDate);
               const dueClass = charge.status === "unpaid"
                 ? daysRemaining <= 0 ? "billing-due-today" : daysRemaining <= 7 ? "billing-due-soon" : ""
                 : "";
               const canRemind = charge.status === "unpaid" && daysRemaining > 0;
-              return <tr className={dueClass} key={charge.id}><td><strong>{charge.student_name}</strong>{charge.memo && <small className="billing-memo">{charge.memo}</small>}</td><td>{charge.billing_period}</td><td>{formatNumber(charge.amount)}원</td><td>{dateLabel(charge.due_date)}{dueClass === "billing-due-soon" && <small className="due-hint">결제일 {daysRemaining}일 전</small>}{dueClass === "billing-due-today" && <small className="due-hint">결제일</small>}</td><td><span className={`status-pill ${charge.status === "paid" ? "active" : ""}`}>{charge.status === "paid" ? "납부 완료" : "미납"}</span></td><td>{charge.paid_at ? dateLabel(new Date(charge.paid_at).toISOString().slice(0, 10)) : "—"}</td>{canManageBilling && <td className="billing-actions"><button className="billing-status-button" onClick={() => void updateBillingStatus(charge)}>{charge.status === "paid" ? "미납으로 변경" : "납부 처리"}</button>{canRemind && <button className="billing-reminder-button" onClick={() => showParentReminderNotConnected(charge)}>미리보기</button>}</td>}</tr>;
+              return <tr className={dueClass} key={charge.id}><td><strong>{charge.student_name}</strong>{charge.memo && <small className="billing-memo">{charge.memo}</small>}</td><td>{charge.billing_period}</td><td>{formatNumber(charge.amount)}원</td><td>{dateLabel(charge.due_date)}{dueClass === "billing-due-soon" && <small className="due-hint">결제일 {daysRemaining}일 전</small>}{dueClass === "billing-due-today" && <small className="due-hint">결제일</small>}</td><td><span className={`status-pill ${charge.status === "paid" ? "active" : ""}`}>{charge.status === "paid" ? "납부 완료" : "미납"}</span></td><td>{charge.paid_at ? new Intl.DateTimeFormat("ko-KR", { timeZone: "Asia/Seoul", dateStyle: "medium" }).format(charge.paid_at) : "—"}</td>{canManageBilling && <><td><select aria-label={`${charge.student_name} 결제 수단`} value={paymentMethods[charge.id] ?? charge.payment_method ?? ""} onChange={(event) => setPaymentMethods((current) => ({ ...current, [charge.id]: event.target.value as PaymentMethod | "" }))}><option value="">수단 선택</option>{Object.entries(paymentMethodLabels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></td><td className="billing-actions">{charge.status === "paid" ? <><button className="billing-status-button" disabled={savingPayment} onClick={() => void updateBillingStatus(charge, "paid")}>수단 저장</button> <button className="billing-status-button" disabled={savingPayment} onClick={() => void updateBillingStatus(charge, "unpaid")}>미납으로 변경</button></> : <button className="billing-status-button" disabled={savingPayment} onClick={() => void updateBillingStatus(charge, "paid")}>납부 처리</button>}{canRemind && <button className="billing-reminder-button" onClick={() => showParentReminderNotConnected(charge)}>미리보기</button>}</td></>}</tr>;
             })}</tbody></table></div>;
           })()}
         </section>

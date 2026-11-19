@@ -269,6 +269,7 @@ export const tuitionCharges = sqliteTable(
       .notNull()
       .default("unpaid"),
     paidAt: integer("paid_at", { mode: "timestamp_ms" }),
+    paymentMethod: text("payment_method", { enum: ["card", "cash", "pay", "transfer", "other"] }),
     memo: text("memo"),
     createdAt: integer("created_at", { mode: "timestamp_ms" })
       .notNull()

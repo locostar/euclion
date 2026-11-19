@@ -37,19 +37,21 @@ test("academy numbers and one-time codes safely enroll staff", async () => {
   }));
   try {
     const db = await mf.getD1Database("DB");
-    for (const migration of ["0000_worthless_menace.sql", "0001_complete_toxin.sql", "0002_ambitious_nicolaos.sql"]) {
+    for (const migration of ["0000_worthless_menace.sql", "0001_complete_toxin.sql", "0002_ambitious_nicolaos.sql", "0003_youthful_taskmaster.sql"]) {
       const sql = await readFile(new URL(`../migrations/${migration}`, import.meta.url), "utf8");
       await db.batch(sql.split("--> statement-breakpoint").map((s) => s.trim()).filter(Boolean).map((s) => db.prepare(s)));
     }
     await db.prepare("INSERT INTO organization (id, name, slug, created_at) VALUES (?, ?, ?, ?)").bind("existing", "Existing", "existing", Date.parse("2026-01-31T16:00:00Z")).run();
     const migration = await readFile(new URL("../migrations/0013_academy_join_codes.sql", import.meta.url), "utf8");
     await db.batch(migration.split("--> statement-breakpoint").map((s) => s.trim()).filter(Boolean).map((s) => db.prepare(s)));
+    const salesMigration = await readFile(new URL("../migrations/0014_sales_dashboard.sql", import.meta.url), "utf8");
+    await db.batch(salesMigration.split("--> statement-breakpoint").map((s) => s.trim()).filter(Boolean).map((s) => db.prepare(s)));
     const existing = await db.prepare("SELECT issued_month, sequence FROM academy_number WHERE organization_id = ?").bind("existing").first();
     assert.deepEqual(existing, { issued_month: "202602", sequence: 1 });
 
-    async function call(path, body, cookie, ip = "192.0.2.1") {
+    async function call(path, body, cookie, ip = "192.0.2.1", method) {
       return mf.dispatchFetch(`https://example.test${path}`, {
-        method: body === undefined ? "GET" : "POST",
+        method: method ?? (body === undefined ? "GET" : "POST"),
         headers: {
           origin: "https://example.test",
           "content-type": "application/json",
@@ -146,6 +148,53 @@ test("academy numbers and one-time codes safely enroll staff", async () => {
     assert.equal(response.status, 200, await response.clone().text());
     const count = await db.prepare("SELECT COUNT(*) AS count FROM member WHERE organization_id = ?").bind(organization.id).first();
     assert.equal(count.count, 3);
+
+    await db.prepare("INSERT INTO students (id, organization_id, name, enrolled_on) VALUES (?, ?, ?, ?)").bind("student", organization.id, "Test", "2026-01-01").run();
+    await db.prepare("INSERT INTO tuition_charges (id, organization_id, student_id, billing_period, amount, due_date) VALUES (?, ?, ?, ?, ?, ?)").bind("charge", organization.id, "student", "2026-01", 100000, "2026-01-10").run();
+    response = await call("/api/billing", { chargeId: "charge", status: "paid", paymentMethod: "cash" }, owner, "192.0.2.1", "PATCH");
+    assert.equal(response.status, 200, await response.clone().text());
+    const initial = await db.prepare("SELECT paid_at, payment_method FROM tuition_charges WHERE id = 'charge'").first();
+    assert.equal(initial.payment_method, "cash");
+    response = await call("/api/billing", { chargeId: "charge", status: "paid", paymentMethod: "card" }, owner, "192.0.2.1", "PATCH");
+    assert.equal(response.status, 200);
+    assert.equal((await db.prepare("SELECT paid_at FROM tuition_charges WHERE id = 'charge'").first()).paid_at, initial.paid_at);
+    await db.prepare("UPDATE tuition_charges SET paid_at = ? WHERE id = 'charge'").bind(Date.parse("2026-02-28T15:00:00Z")).run();
+    response = await call("/api/sales?period=2026-03", undefined, owner);
+    assert.equal(response.status, 200);
+    const sales = await response.json();
+    assert.equal(sales.records.length, 1);
+    assert.equal(sales.records[0].payment_method, "card");
+    const outsider = await signup("outsider@example.test", "192.0.2.5");
+    response = await call("/api/academy", { name: "Other Academy" }, outsider, "192.0.2.5");
+    assert.equal(response.status, 201);
+    response = await call("/api/sales?period=2026-03", undefined, outsider, "192.0.2.5");
+    assert.equal((await response.json()).records.length, 0);
+    response = await call("/api/billing", { chargeId: "charge", status: "unpaid" }, outsider, "192.0.2.5", "PATCH");
+    assert.equal(response.status, 404);
+    response = await call("/api/sales?period=2026-02", undefined, owner);
+    assert.equal((await response.json()).records.length, 0);
+    response = await call("/api/billing", { chargeId: "charge", status: "unpaid" }, owner, "192.0.2.1", "PATCH");
+    assert.equal(response.status, 200);
+    const unpaid = await db.prepare("SELECT paid_at, payment_method FROM tuition_charges WHERE id = 'charge'").first();
+    assert.equal(unpaid.paid_at, null);
+    assert.equal(unpaid.payment_method, null);
+    response = await call("/api/sales?period=2026-03", undefined, owner);
+    assert.equal((await response.json()).records.length, 0);
+    await db.prepare("UPDATE tuition_charges SET status = 'paid', paid_at = ?, payment_method = NULL WHERE id = 'charge'").bind(Date.parse("2026-02-28T15:00:00Z")).run();
+    response = await call("/api/sales?period=2026-03", undefined, owner);
+    assert.equal((await response.json()).records[0].payment_method, null);
+    response = await call("/api/dashboard-layout", undefined, owner);
+    const layout = (await response.json()).layout;
+    layout.reverse();
+    layout[0].size = "large";
+    response = await call("/api/dashboard-layout", layout, owner, "192.0.2.1", "PUT");
+    assert.equal(response.status, 200);
+    response = await call("/api/dashboard-layout", undefined, owner);
+    assert.deepEqual((await response.json()).layout, layout);
+    response = await call("/api/dashboard-layout", undefined, winner, "192.0.2.2");
+    assert.notDeepEqual((await response.json()).layout, layout);
+    response = await call("/api/dashboard-layout", [layout[0]], owner, "192.0.2.1", "PUT");
+    assert.equal(response.status, 400);
   } finally {
     await mf.dispose();
   }

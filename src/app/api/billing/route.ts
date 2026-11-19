@@ -16,6 +16,7 @@ type TuitionChargeRow = {
   due_date: string;
   status: "unpaid" | "paid";
   paid_at: number | null;
+  payment_method: "card" | "cash" | "pay" | "transfer" | "other" | null;
   memo: string | null;
 };
 
@@ -31,7 +32,7 @@ export async function GET(request: Request) {
   const charges = await result.context.env.DB.prepare(
     `SELECT tc.id, tc.student_id, s.name AS student_name,
             tc.billing_period, tc.amount, tc.due_date, tc.status,
-            tc.paid_at, tc.memo
+            tc.paid_at, tc.payment_method, tc.memo
      FROM tuition_charges tc
      INNER JOIN students s
        ON s.id = tc.student_id AND s.organization_id = tc.organization_id
@@ -102,15 +103,18 @@ export async function PATCH(request: Request) {
     `UPDATE tuition_charges
      SET status = ?,
          paid_at = CASE WHEN ? = 'paid'
-           THEN cast(unixepoch('subsecond') * 1000 as integer)
+           THEN COALESCE(paid_at, cast(unixepoch('subsecond') * 1000 as integer))
            ELSE NULL
          END,
+         payment_method = CASE WHEN ? = 'paid' THEN ? ELSE NULL END,
          updated_at = cast(unixepoch('subsecond') * 1000 as integer)
      WHERE id = ? AND organization_id = ?`,
   )
     .bind(
       parsed.data.status,
       parsed.data.status,
+      parsed.data.status,
+      parsed.data.paymentMethod ?? null,
       parsed.data.chargeId,
       result.context.organizationId,
     )
