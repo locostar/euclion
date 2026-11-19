@@ -337,6 +337,7 @@ function Dashboard({ academy, user }: {
   const [savingBilling, setSavingBilling] = useState(false);
   const [seatOccupancies, setSeatOccupancies] = useState<SeatOccupancy[]>([]);
   const [seatPrices, setSeatPrices] = useState<Record<string, number>>({});
+  const [dashboardTasks, setDashboardTasks] = useState<{ period: string; charges: BillingCharge[]; unseatedCount: number } | null>(null);
   const [selectedUnseatedStudentId, setSelectedUnseatedStudentId] = useState<string | null>(null);
   const [pricingSeat, setPricingSeat] = useState<{ roomNumber: number; seatNumber: number } | null>(null);
   const [seatPriceForm, setSeatPriceForm] = useState("0");
@@ -375,7 +376,7 @@ function Dashboard({ academy, user }: {
   const selectedLearningStudent = activeStudents.find((student) => student.id === learningStudentId)
     ?? activeStudents[0];
 
-  const reloadData = useCallback(async () => {
+  const reloadData = useCallback(async (signal?: AbortSignal) => {
     try {
       const dashboardQuery = page === "dashboard" && billingQueryPeriod
         ? `?include=dashboard&period=${encodeURIComponent(billingQueryPeriod)}`
@@ -386,7 +387,8 @@ function Dashboard({ academy, user }: {
         billingCharges?: BillingCharge[];
         seatOccupancies?: SeatOccupancy[];
         seatPrices?: SeatPrice[];
-      }>(`/api/overview${dashboardQuery}`);
+      }>(`/api/overview${dashboardQuery}`, { signal });
+      if (signal?.aborted) return;
       setStudents(overview.students.map(toStudent));
       setClasses(overview.classes.map(toClassroom));
       setAttendanceClass((current) => current || overview.classes[0]?.id || "");
@@ -399,19 +401,34 @@ function Dashboard({ academy, user }: {
         setSeatPrices(Object.fromEntries(
           overview.seatPrices.map((price) => [`${price.room_number}:${price.seat_number}`, price.monthly_fee]),
         ));
+        const seatedIds = new Set(overview.seatOccupancies.flatMap((seat) => seat.student_id ? [seat.student_id] : []));
+        setDashboardTasks({
+          period: billingQueryPeriod,
+          charges: overview.billingCharges,
+          unseatedCount: overview.students.filter((student) => student.status === "active" && !seatedIds.has(student.id)).length,
+        });
       }
       setRosterLoaded(true);
       setDataError("");
     } catch (caught) {
+      if (signal?.aborted) return;
       setDataError(caught instanceof Error ? caught.message : "학원 정보를 불러오지 못했습니다.");
     }
   }, [billingQueryPeriod, page]);
 
   useEffect(() => {
-    if (!needsRoster || rosterLoaded || (page === "dashboard" && !billingQueryPeriod)) return;
-    const timer = window.setTimeout(() => { void reloadData(); }, 0);
-    return () => window.clearTimeout(timer);
+    if (!needsRoster || page === "dashboard" || rosterLoaded) return;
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => { void reloadData(controller.signal); }, 0);
+    return () => { window.clearTimeout(timer); controller.abort(); };
   }, [billingQueryPeriod, needsRoster, page, rosterLoaded, reloadData]);
+
+  useEffect(() => {
+    if (page !== "dashboard" || !billingQueryPeriod) return;
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => { void reloadData(controller.signal); }, 0);
+    return () => { window.clearTimeout(timer); controller.abort(); };
+  }, [billingQueryPeriod, page, reloadData]);
 
   useEffect(() => {
     const studentId = selectedLearningStudent?.id;
@@ -617,6 +634,14 @@ function Dashboard({ academy, user }: {
   const selectedUnseatedStudent = unseatedStudents.find(
     (student) => student.id === selectedUnseatedStudentId,
   );
+  const taskCharges = dashboardTasks?.period === currentDate.slice(0, 7) && currentDate
+    ? dashboardTasks.charges.filter((charge) => charge.status === "unpaid")
+    : [];
+  const dueOrOverdueCount = taskCharges.filter((charge) => daysUntilDue(charge.due_date, currentDate) <= 0).length;
+  const dueSoonCount = taskCharges.filter((charge) => {
+    const days = daysUntilDue(charge.due_date, currentDate);
+    return days > 0 && days <= 7;
+  }).length;
   const shownStudents = useMemo(() => {
     const term = search.trim().toLowerCase();
     return students.filter((s) => {
@@ -1177,7 +1202,16 @@ function Dashboard({ academy, user }: {
           <div className="quick-grid">
             {[{ icon: <Plus size={19} />, title: "학생 등록", desc: "새로운 학생 추가", action: startNewStudent, tone: "mint" }, { icon: <UsersRound size={19} />, title: "좌석 배치도", desc: "좌석과 출결 상태 관리", action: () => go("seats"), tone: "blue" }, { icon: <BookOpen size={19} />, title: "반 관리", desc: "운영 중인 반 확인", action: () => go("classes"), tone: "purple" }, { icon: <MessageSquareText size={19} />, title: "상담·학습 관리", desc: "상담 및 시험 성적 추이", action: () => go("consultations"), tone: "peach" }].map((item) => <button className="quick-item" onClick={item.action} key={item.title}><span className={`quick-icon ${item.tone}`}>{item.icon}</span><span><strong>{item.title}</strong><small>{item.desc}</small></span><ChevronRight size={16} /></button>)}
           </div></section>
-          <section className="panel"><div className="panel-heading"><div><h2>알림과 할 일</h2><p>놓치지 않도록 한곳에서 확인해요.</p></div><Bell size={18} className="muted-icon" /></div><div className="dashboard-empty"><span><Check size={22} /></span><strong>아직 표시할 알림이 없어요</strong><p>실제 알림 기능은 준비 중입니다.</p></div></section>
+          <section className="panel"><div className="panel-heading"><div><h2>확인이 필요한 업무</h2><p>이번 달 청구와 좌석 배정 현황입니다.</p></div><Bell size={18} className="muted-icon" /></div>
+            {!dashboardTasks || dashboardTasks.period !== currentDate.slice(0, 7) || !currentDate || dataError
+              ? <div className="dashboard-empty"><strong>{dataError ? "업무 현황을 불러오지 못했습니다." : "업무 현황을 불러오고 있어요."}</strong></div>
+              : <div className="dashboard-tasks">
+                <button onClick={() => { setBillingPeriod(""); go("billing"); }}><span><strong>납부 기한 당일·경과</strong><small>이번 달 청구 기준</small></span><b>{formatNumber(dueOrOverdueCount)}건</b><ChevronRight size={16} /></button>
+                <button onClick={() => { setBillingPeriod(""); go("billing"); }}><span><strong>납부 기한 7일 이내</strong><small>이번 달 청구 기준</small></span><b>{formatNumber(dueSoonCount)}건</b><ChevronRight size={16} /></button>
+                <button onClick={() => go("seats")}><span><strong>좌석 미배정</strong><small>재원 학생 기준</small></span><b>{formatNumber(dashboardTasks.unseatedCount)}명</b><ChevronRight size={16} /></button>
+                <p>지난달 청구는 청구 내역에서 해당 월을 선택해 확인해 주세요. 알림은 자동 발송되지 않습니다.</p>
+              </div>}
+          </section>
         </div>
         <section className="panel recent-panel"><div className="panel-heading"><div><h2>학생 현황</h2><p>등록된 학생 목록을 확인해 보세요.</p></div><button className="text-link" onClick={() => go("students")}>전체 보기 <ArrowRight size={15} /></button></div><StudentTable students={activeStudents.slice(0, 4)} classNames={classNames} select={showStudent} /></section>
       </>}
