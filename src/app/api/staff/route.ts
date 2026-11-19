@@ -1,6 +1,8 @@
 import { getAcademyContext, apiError, apiJson } from "@/lib/api-context";
 import { createAuth } from "@/lib/auth";
 import { parseJson } from "@/lib/request-validation";
+import { emailConfigured, EmailDeliveryError } from "@/lib/email";
+import { isAPIError } from "better-auth/api";
 import { z } from "zod";
 
 const inviteInput = z.object({
@@ -72,7 +74,7 @@ export async function POST(request: Request) {
   const parsed = await parseJson(request, inviteInput);
   if ("response" in parsed) return parsed.response;
 
-  if (!env.RESEND_API_KEY.trim() || !env.RESEND_FROM.trim()) {
+  if (!emailConfigured(env)) {
     return apiError(
       503,
       "EMAIL_NOT_CONFIGURED",
@@ -92,11 +94,20 @@ export async function POST(request: Request) {
     });
     return apiJson({ invitation }, { status: 201 });
   } catch (caught) {
-    return apiError(
-      400,
-      "STAFF_INVITATION_FAILED",
-      caught instanceof Error ? caught.message : "직원 초대를 보내지 못했습니다.",
-    );
+    if (caught instanceof EmailDeliveryError) {
+      console.error("Invitation email delivery failed", { kind: caught.kind, status: caught.status });
+      return apiError(502, "EMAIL_DELIVERY_FAILED",
+        caught.kind === "unknown"
+          ? "발송 결과를 확인하지 못했습니다. 초대 대기 목록과 메일 서비스 발송 내역을 확인한 후 재전송해 주세요."
+          : "메일 서비스가 발송을 거부했습니다. 발신 도메인과 서비스 설정을 확인한 후 초대 대기 목록에서 재전송해 주세요.",
+      );
+    }
+    if (isAPIError(caught)) {
+      console.error("Invitation request rejected", { status: caught.status });
+      return apiError(400, "STAFF_INVITATION_REJECTED", "초대를 생성하지 못했습니다. 이미 가입했거나 대기 중인 초대가 있는지 확인해 주세요.");
+    }
+    console.error("Invitation request failed", { error: caught instanceof Error ? caught.name : "unknown" });
+    return apiError(500, "STAFF_INVITATION_FAILED", "초대 처리 결과를 확인하지 못했습니다. 초대 대기 목록을 확인한 후 다시 시도해 주세요.");
   }
 }
 

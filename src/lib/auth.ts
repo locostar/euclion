@@ -32,6 +32,15 @@ export function createAuth(env: CloudflareEnv) {
       schema: authSchema,
     }),
     plugins: createAuthPlugins(env, baseURL),
+    emailVerification: {
+      sendVerificationEmail: async ({ user, url }) => {
+        await sendEmail(env, {
+          to: user.email,
+          subject: "Euclion 이메일 주소 확인",
+          text: `이메일 주소를 확인하려면 다음 링크를 여세요:\n${url}`,
+        });
+      },
+    },
     emailAndPassword: {
       enabled: true,
       minPasswordLength: 12,

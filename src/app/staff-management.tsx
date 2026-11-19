@@ -32,7 +32,13 @@ const roleLabels: Record<StaffRole, string> = {
 
 async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, init);
-  const result = await response.json() as T & { error?: { message?: string } };
+  const text = await response.text();
+  let result: T & { error?: { message?: string } };
+  try {
+    result = JSON.parse(text) as T & { error?: { message?: string } };
+  } catch {
+    throw new Error("서버 응답을 확인하지 못했습니다. 초대 대기 목록을 확인한 후 다시 시도해 주세요.");
+  }
   if (!response.ok) {
     throw new Error(result.error?.message ?? "요청을 완료하지 못했습니다.");
   }
@@ -97,7 +103,7 @@ export function StaffManagement({
           resend: false,
         }),
       });
-      setMessage(`${email.trim()} 주소로 초대 이메일을 보냈습니다.`);
+      setMessage(`${email.trim()} 주소로 초대 이메일 발송을 요청했습니다. 수신함과 스팸함을 확인해 주세요.`);
       setEmail("");
       await reload(false);
     } catch (caught) {
@@ -123,10 +129,12 @@ export function StaffManagement({
           resend: true,
         }),
       });
-      setMessage(`${invitation.email} 주소로 초대 이메일을 다시 보냈습니다.`);
+      setMessage(`${invitation.email} 주소로 초대 이메일 재발송을 요청했습니다. 수신함과 스팸함을 확인해 주세요.`);
       await reload(false);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "초대 이메일을 다시 보내지 못했습니다.");
+      const message = caught instanceof Error ? caught.message : "초대 이메일을 다시 보내지 못했습니다.";
+      await reload(false);
+      setError(message);
     } finally {
       setPending(false);
     }

@@ -14,7 +14,7 @@ export default function InvitePage() {
 function InviteContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
-  const { data: session, isPending: sessionPending } = authClient.useSession();
+  const { data: session, isPending: sessionPending, error: sessionError, refetch } = authClient.useSession();
   const invitationId = searchParams.get("invitationId") ?? "";
   const invitedEmail = searchParams.get("email") ?? "";
   const [mode, setMode] = useState<AuthMode>("sign-in");
@@ -22,6 +22,7 @@ function InviteContent() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
   const [pending, setPending] = useState(false);
 
   async function acceptInvitation() {
@@ -52,17 +53,44 @@ function InviteContent() {
     setPending(true);
     setError("");
     try {
+      const accountEmail = invitedEmail || email;
       const result = mode === "sign-up"
-        ? await authClient.signUp.email({ name, email, password })
-        : await authClient.signIn.email({ email, password });
+        ? await authClient.signUp.email({ name, email: accountEmail, password })
+        : await authClient.signIn.email({ email: accountEmail, password });
       if (result.error) {
         setError(result.error.message ?? "계정 인증에 실패했습니다.");
         return;
       }
       await authClient.$store.notify("$sessionSignal");
-      await acceptInvitation();
+      if (result.data?.user.emailVerified) {
+        await acceptInvitation();
+      } else {
+        setMessage("초대를 수락하려면 이메일 소유 확인이 필요합니다. 아래 버튼으로 확인 메일을 받아 주세요.");
+      }
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "계정 인증에 실패했습니다.");
+    } finally {
+      setPending(false);
+    }
+  }
+
+  async function sendVerification() {
+    if (!session) return;
+    setPending(true);
+    setError("");
+    setMessage("");
+    try {
+      const result = await authClient.sendVerificationEmail({
+        email: session.user.email,
+        callbackURL: window.location.href,
+      });
+      if (result.error) {
+        setError("확인 메일을 보내지 못했습니다. 잠시 후 다시 시도하거나 학원에 문의해 주세요.");
+        return;
+      }
+      setMessage("이메일 확인 링크를 발송 요청했습니다. 수신함과 스팸함을 확인해 주세요.");
+    } catch {
+      setError("확인 메일 발송 결과를 확인하지 못했습니다. 수신함을 확인한 후 다시 시도해 주세요.");
     } finally {
       setPending(false);
     }
@@ -72,7 +100,11 @@ function InviteContent() {
     setPending(true);
     setError("");
     try {
-      await authClient.signOut();
+      const result = await authClient.signOut();
+      if (result.error) {
+        setError(result.error.message ?? "로그아웃하지 못했습니다.");
+        return;
+      }
       await authClient.$store.notify("$sessionSignal");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "로그아웃하지 못했습니다.");
@@ -83,7 +115,7 @@ function InviteContent() {
 
   const sessionEmail = session?.user.email.toLowerCase();
   const matchingAccount = Boolean(sessionEmail && invitedEmail && sessionEmail === invitedEmail.toLowerCase());
-  const invalidLink = !invitationId;
+  const invalidLink = !invitationId || !invitedEmail;
 
   return (
     <main className="auth-page">
@@ -100,14 +132,18 @@ function InviteContent() {
           {invalidLink && <p className="error-message" role="alert">초대 링크가 올바르지 않습니다.</p>}
           {sessionPending ? (
             <div className="auth-loading"><LoaderCircle className="spin" size={24} />계정 정보를 확인하고 있어요.</div>
+          ) : sessionError ? (
+            <div className="auth-form"><p className="error-message" role="alert">계정 정보를 확인하지 못했습니다. 잠시 후 다시 시도해 주세요.</p><button className="button button-primary auth-submit" onClick={() => void refetch()}>다시 시도하기</button></div>
           ) : matchingAccount ? (
             <div className="auth-form">
               <p>{session?.user.name}님, 초대받은 계정으로 로그인되어 있습니다.</p>
+              {message && <p role="status">{message}</p>}
               {error && <p className="error-message" role="alert">{error}</p>}
+              {!session?.user.emailVerified ? <><p>초대를 수락하려면 이메일 주소를 확인해야 합니다.</p><button className="button button-primary auth-submit" onClick={() => void sendVerification()} disabled={pending || invalidLink}>이메일 확인 메일 보내기 <ArrowRight size={16} /></button></> :
               <button className="button button-primary auth-submit" onClick={() => void acceptInvitation()} disabled={pending || invalidLink}>
                 {pending ? <LoaderCircle className="spin" size={16} /> : null}
                 초대 수락하기 <ArrowRight size={16} />
-              </button>
+              </button>}
             </div>
           ) : session ? (
             <div className="auth-form">
@@ -122,7 +158,7 @@ function InviteContent() {
                 <label className="field">초대 이메일<input type="email" autoComplete="email" required maxLength={254} readOnly={Boolean(invitedEmail)} value={invitedEmail || email} onChange={(event) => setEmail(event.target.value)} /></label>
                 <label className="field">비밀번호<input type="password" autoComplete={mode === "sign-in" ? "current-password" : "new-password"} required minLength={12} maxLength={128} value={password} onChange={(event) => setPassword(event.target.value)} /><small>12자 이상 입력해 주세요.</small></label>
                 {error && <p className="error-message" role="alert">{error}</p>}
-                <button className="button button-primary auth-submit" type="submit" disabled={pending || !invitationId}>
+                <button className="button button-primary auth-submit" type="submit" disabled={pending || invalidLink}>
                   {pending ? <LoaderCircle className="spin" size={16} /> : null}
                   {mode === "sign-in" ? "로그인하고 초대 수락" : "계정 만들고 초대 수락"} <ArrowRight size={16} />
                 </button>

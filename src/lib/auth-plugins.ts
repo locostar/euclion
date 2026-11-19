@@ -26,6 +26,7 @@ const roleLabels: Record<string, string> = {
 
 const organizationOptions = {
   organizationLimit: 1,
+  requireEmailVerificationOnInvitation: true,
   ac: accessControl,
   roles: {
     owner: fullAccess,
