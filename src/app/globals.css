@@ -411,6 +411,15 @@ tr:hover .billing-reminder-button, tr:focus-within .billing-reminder-button { op
 .dashboard-sales-link { margin-top: 6px; }
 .dashboard-sales-note { margin-top: 12px; color: #65796e; font-size: 11px; line-height: 1.5; }
 .dashboard-sales-error { color: #9c3935; font-size: 12px; }
+.analysis-section { margin-bottom: 20px; }
+.analysis-section > p, .analysis-section form + p { color: #65796e; font-size: 12px; line-height: 1.6; margin: 10px 0 16px; }
+.analysis-section h3 { margin-top: 24px; }
+.analysis-period { max-width: 180px; margin: 16px 0; }
+.analysis-rows, .analysis-form { display: grid; gap: 12px; margin: 16px 0; }
+.analysis-row { display: grid; grid-template-columns: minmax(140px, 2fr) minmax(90px, 1fr) minmax(90px, 1fr) auto; gap: 10px; align-items: end; }
+.analysis-form { grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); }
+.analysis-actions { display: flex; flex-wrap: wrap; align-items: end; gap: 8px; margin-top: 12px; }
+@media (max-width: 600px) { .analysis-row { grid-template-columns: 1fr 1fr; } }
 .sales-panel { margin-bottom: 35px; }
 .sales-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(145px, 1fr)); gap: 10px; margin-bottom: 28px; }
 .sales-summary-card { display: grid; gap: 9px; padding: 15px; border: 1px solid #e8eee8; border-radius: 9px; background: #f7faf7; }

@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const dashboardCardIds = ["students", "attendance", "unpaid", "quick", "tasks", "recent", "sales"] as const;
+export const dashboardCardIds = ["students", "attendance", "unpaid", "quick", "tasks", "recent", "sales", "analysis"] as const;
 const cardId = z.enum(dashboardCardIds);
 const currentDashboardCardSchema = z.object({
     id: cardId,
@@ -22,15 +22,12 @@ export const defaultDashboardLayout: DashboardLayout = [
   { id: "unpaid", width: 33.33, height: null }, { id: "quick", width: 66.67, height: null },
   { id: "tasks", width: 33.33, height: null }, { id: "recent", width: 66.67, height: null },
   { id: "sales", width: 33.33, height: null },
+  { id: "analysis", width: 33.33, height: null },
 ];
 export const dashboardLayoutSchema = z.array(dashboardCardSchema)
   .refine((cards) => {
     const ids = new Set(cards.map((card) => card.id));
-    return ids.size === cards.length && (
-      cards.length === dashboardCardIds.length ||
-      (cards.length === dashboardCardIds.length - 1 && !ids.has("sales"))
-    );
+    return ids.size === cards.length && dashboardCardIds.slice(0, 6).every((id) => ids.has(id));
   })
-  .transform((cards) => cards.some((card) => card.id === "sales")
-    ? cards
-    : [...cards, { id: "sales" as const, width: 33.33, height: null }]);
+  .transform((cards) => [...cards, ...defaultDashboardLayout.filter((item) =>
+    (item.id === "sales" || item.id === "analysis") && !cards.some((card) => card.id === item.id))]);

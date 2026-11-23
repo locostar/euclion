@@ -37,7 +37,7 @@ test("academy numbers and one-time codes safely enroll staff", async () => {
   }));
   try {
     const db = await mf.getD1Database("DB");
-    for (const migration of ["0000_worthless_menace.sql", "0001_complete_toxin.sql", "0002_ambitious_nicolaos.sql", "0003_youthful_taskmaster.sql"]) {
+    for (const migration of ["0000_worthless_menace.sql", "0001_complete_toxin.sql", "0002_ambitious_nicolaos.sql", "0003_youthful_taskmaster.sql", "0004_happy_silver_samurai.sql", "0005_lazy_felicia_hardy.sql"]) {
       const sql = await readFile(new URL(`../migrations/${migration}`, import.meta.url), "utf8");
       await db.batch(sql.split("--> statement-breakpoint").map((s) => s.trim()).filter(Boolean).map((s) => db.prepare(s)));
     }
@@ -46,6 +46,8 @@ test("academy numbers and one-time codes safely enroll staff", async () => {
     await db.batch(migration.split("--> statement-breakpoint").map((s) => s.trim()).filter(Boolean).map((s) => db.prepare(s)));
     const salesMigration = await readFile(new URL("../migrations/0014_sales_dashboard.sql", import.meta.url), "utf8");
     await db.batch(salesMigration.split("--> statement-breakpoint").map((s) => s.trim()).filter(Boolean).map((s) => db.prepare(s)));
+    const analysisMigration = await readFile(new URL("../migrations/0015_student_analysis.sql", import.meta.url), "utf8");
+    await db.batch(analysisMigration.split("--> statement-breakpoint").map((s) => s.trim()).filter(Boolean).map((s) => db.prepare(s)));
     const existing = await db.prepare("SELECT issued_month, sequence FROM academy_number WHERE organization_id = ?").bind("existing").first();
     assert.deepEqual(existing, { issued_month: "202602", sequence: 1 });
 
@@ -169,6 +171,31 @@ test("academy numbers and one-time codes safely enroll staff", async () => {
     const outsider = await signup("outsider@example.test", "192.0.2.5");
     response = await call("/api/academy", { name: "Other Academy" }, outsider, "192.0.2.5");
     assert.equal(response.status, 201);
+    const snapshot = { period: "2025-12", groups: [{ school: "Test School", grade: "재수", count: 8 }] };
+    response = await call("/api/student-analysis", snapshot, owner, "192.0.2.1", "PUT");
+    assert.equal(response.status, 200);
+    response = await call("/api/student-analysis", { ...snapshot, groups: [...snapshot.groups, ...snapshot.groups] }, owner, "192.0.2.1", "PUT");
+    assert.equal(response.status, 400);
+    const admission = { studentId: "student", year: 2026, university: "Test University", department: "Math", outcome: "진학", cohort: "재수", graduatedSchool: "Test School", detail: "score", source: "source" };
+    response = await call("/api/student-analysis", admission, owner);
+    assert.equal(response.status, 201);
+    response = await call("/api/student-analysis", admission, outsider, "192.0.2.5");
+    assert.equal(response.status, 404);
+    response = await call("/api/student-analysis", undefined, outsider, "192.0.2.5");
+    const otherAnalysis = await response.json();
+    assert.equal(otherAnalysis.snapshots.length, 0);
+    assert.equal(otherAnalysis.admissions.length, 0);
+    response = await call("/api/student-analysis", undefined, owner);
+    const ownAnalysis = await response.json();
+    assert.deepEqual(JSON.parse(ownAnalysis.snapshots[0].groups_json), snapshot.groups);
+    assert.equal(ownAnalysis.admissions[0].university, "Test University");
+    const admissionId = ownAnalysis.admissions[0].id;
+    response = await call("/api/student-analysis", { ...admission, id: admissionId, university: "Changed University" }, owner);
+    assert.equal(response.status, 200);
+    response = await call(`/api/student-analysis?id=${admissionId}`, undefined, outsider, "192.0.2.5", "DELETE");
+    assert.equal(response.status, 404);
+    response = await call(`/api/student-analysis?id=${admissionId}`, undefined, owner, "192.0.2.1", "DELETE");
+    assert.equal(response.status, 200);
     response = await call("/api/sales?period=2026-03", undefined, outsider, "192.0.2.5");
     assert.equal((await response.json()).records.length, 0);
     response = await call("/api/sales?period=2026-03&summary=1", undefined, outsider, "192.0.2.5");
@@ -209,11 +236,11 @@ test("academy numbers and one-time codes safely enroll staff", async () => {
     await db.prepare("UPDATE dashboard_layout SET layout = ?").bind(JSON.stringify(legacyLayout)).run();
     response = await call("/api/dashboard-layout", undefined, owner);
     assert.deepEqual((await response.json()).layout, layout.map((card) => ({ id: card.id, width: 66.67, height: null })));
-    const oldLayout = legacyLayout.filter((card) => card.id !== "sales");
+    const oldLayout = legacyLayout.filter((card) => card.id !== "sales" && card.id !== "analysis");
     await db.prepare("UPDATE dashboard_layout SET layout = ? WHERE organization_id = ? AND user_id = (SELECT user_id FROM member WHERE organization_id = ? AND role = 'owner' LIMIT 1)")
       .bind(JSON.stringify(oldLayout), organization.id, organization.id).run();
     response = await call("/api/dashboard-layout", undefined, owner);
-    assert.deepEqual((await response.json()).layout, [...oldLayout.map((card) => ({ id: card.id, width: 66.67, height: null })), { id: "sales", width: 33.33, height: null }]);
+    assert.deepEqual((await response.json()).layout, [...oldLayout.map((card) => ({ id: card.id, width: 66.67, height: null })), { id: "sales", width: 33.33, height: null }, { id: "analysis", width: 33.33, height: null }]);
     response = await call("/api/dashboard-layout", legacyLayout, owner, "192.0.2.1", "PUT");
     assert.equal(response.status, 200);
     response = await call("/api/dashboard-layout", undefined, owner);

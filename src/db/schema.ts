@@ -68,6 +68,31 @@ export const students = sqliteTable(
   ],
 );
 
+export const studentMonthlySnapshots = sqliteTable("student_monthly_snapshots", {
+  organizationId: text("organization_id").notNull().references(() => organization.id, { onDelete: "cascade" }),
+  period: text("period").notNull(),
+  groupsJson: text("groups_json").notNull(),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull().default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`),
+}, (table) => [uniqueIndex("student_monthly_snapshots_org_period_uq").on(table.organizationId, table.period)]);
+
+export const studentAdmissionResults = sqliteTable("student_admission_results", {
+  id: text("id").primaryKey(),
+  organizationId: text("organization_id").notNull().references(() => organization.id, { onDelete: "cascade" }),
+  studentId: text("student_id").notNull(),
+  admissionYear: integer("admission_year").notNull(),
+  university: text("university").notNull(),
+  department: text("department").notNull(),
+  outcome: text("outcome").notNull(),
+  cohort: text("cohort").notNull(),
+  graduatedSchool: text("graduated_school").notNull().default(""),
+  admissionDetail: text("admission_detail").notNull().default(""),
+  source: text("source").notNull().default(""),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull().default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`),
+}, (table) => [
+  foreignKey({ columns: [table.studentId, table.organizationId], foreignColumns: [students.id, students.organizationId] }).onDelete("cascade"),
+  index("student_admission_results_org_year_idx").on(table.organizationId, table.admissionYear),
+]);
+
 export const classes = sqliteTable(
   "classes",
   {

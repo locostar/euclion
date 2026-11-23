@@ -15,9 +15,10 @@ import { StaffManagement } from "../staff-management";
 import { DashboardCards } from "../dashboard-cards";
 import { DashboardSales } from "../dashboard-sales";
 import { SalesAnalysis } from "../sales-analysis";
+import { StudentAnalysis } from "../student-analysis";
 import { paymentMethodLabels, type PaymentMethod } from "@/lib/payment-method";
 
-type Page = "dashboard" | "students" | "withdrawn-students" | "student-new" | "consultations" | "classes" | "class-new" | "schedule" | "attendance" | "attendance-list" | "seats" | "billing" | "billing-settings" | "payments" | "sales" | "academy" | "staff" | "permissions";
+type Page = "dashboard" | "students" | "withdrawn-students" | "student-new" | "student-analysis" | "consultations" | "classes" | "class-new" | "schedule" | "attendance" | "attendance-list" | "seats" | "billing" | "billing-settings" | "payments" | "sales" | "academy" | "staff" | "permissions";
 type Student = {
   id: string; name: string; birth: string; phone: string; guardian: string; gender: "male" | "female" | "";
   school: string; grade: string; graduatedSchool: string; address: string; enrolled: string; classes: string[];
@@ -54,13 +55,13 @@ type AssessmentRecord = {
 };
 
 const menus: { label: string; items: [string, Page][] }[] = [
-  { label: "학생 관리", items: [["학생 목록", "students"], ["퇴원 학생", "withdrawn-students"], ["신규 학생 등록", "student-new"], ["상담·학습 관리", "consultations"]] },
+  { label: "학생 관리", items: [["학생 목록", "students"], ["퇴원 학생", "withdrawn-students"], ["신규 학생 등록", "student-new"], ["학생·진학 분석", "student-analysis"], ["상담·학습 관리", "consultations"]] },
   { label: "수업 관리", items: [["반 목록", "classes"], ["반 등록", "class-new"], ["모의고사 일정", "schedule"]] },
   { label: "수강료 관리", items: [["청구 내역", "billing"], ["정기 청구 설정", "billing-settings"], ["납부 내역", "payments"], ["매출 분석", "sales"]] },
   { label: "학원 관리", items: [["학원 정보", "academy"], ["직원 관리", "staff"], ["직원별 권한", "permissions"]] },
 ];
 const labels: Record<Page, string> = {
-  dashboard: "대시보드", students: "학생 목록", "withdrawn-students": "퇴원 학생", "student-new": "신규 학생 등록", consultations: "상담·학습 관리",
+  dashboard: "대시보드", students: "학생 목록", "withdrawn-students": "퇴원 학생", "student-new": "신규 학생 등록", "student-analysis": "학생·진학 분석", consultations: "상담·학습 관리",
   classes: "반 목록", "class-new": "반 등록", schedule: "모의고사 일정", attendance: "출결 입력",
   "attendance-list": "출결 조회", seats: "좌석 배치도", billing: "청구 내역", "billing-settings": "정기 청구 설정",
   payments: "납부·환불 내역", sales: "매출 분석", academy: "학원 정보", staff: "직원 관리", permissions: "직원별 권한",
@@ -91,7 +92,7 @@ function routePage(pathname: string): Page {
   if (section === "classes" && (detail === "new" || action === "edit")) return "class-new";
   if (section === "attendance" && detail === "history") return "attendance-list";
   if (section === "billing" && detail === "settings") return "billing-settings";
-  if ((["consultations", "classes", "schedule", "attendance", "seats", "billing", "payments", "sales", "academy", "staff", "permissions"] as string[]).includes(section)) {
+  if ((["student-analysis", "consultations", "classes", "schedule", "attendance", "seats", "billing", "payments", "sales", "academy", "staff", "permissions"] as string[]).includes(section)) {
     return section as Page;
   }
   return "dashboard";
@@ -1299,9 +1300,11 @@ function Dashboard({ academy, user }: {
           </section> },
           recent: { title: "학생 현황", content: <section className="panel recent-panel"><div className="panel-heading"><div><h2>학생 현황</h2><p>등록된 학생 목록을 확인해 보세요.</p></div><button className="text-link" onClick={() => go("students")}>전체 보기 <ArrowRight size={15} /></button></div><StudentTable students={activeStudents.slice(0, 4)} classNames={classNames} select={showStudent} /></section> },
           sales: { title: "월별 수납 현황", content: <DashboardSales currentPeriod={currentDate.slice(0, 7)} openSales={(period) => go("sales", period)} /> },
+          analysis: { title: "학생·진학 분석", content: <button className="stat-card" onClick={() => go("student-analysis")}><div className="stat-top"><span className="stat-icon mint"><UsersRound size={20} /></span><ArrowRight size={17} /></div><div className="stat-label">학생·진학 분석</div><div className="stat-number">{rosterLoaded ? formatNumber(activeStudents.length) : "—"}<small>명</small></div><div className="stat-foot">학교·학년 분포와 진학 결과 보기</div></button> },
         }} />
       </>}
       {page === "sales" && <SalesAnalysis initialPeriod={salesPeriod} />}
+      {page === "student-analysis" && <StudentAnalysis />}
 
       {page === "students" && selected && <><button className="back-link" onClick={() => go("students")}><ArrowLeft size={16} /> 학생 목록으로</button><PageHeading eyebrow="STUDENT MANAGEMENT" title={selected.name} description={`${selected.status} · 등록일 ${dateLabel(selected.enrolled)}`} action={<div className="student-detail-actions"><Button variant="outline" onClick={() => editStudent(selected)}>정보 수정</Button>{selected.status === "재원" ? <Button variant="outline" onClick={() => void updateStudentStatus(selected, "withdrawn")}>퇴원 처리</Button> : <Button onClick={() => void updateStudentStatus(selected, "active")}>재원 복귀</Button>}</div>} />{message && <div className="success-message">{message}</div>}{error && <p className="error-message" role="alert">{error}</p>}<div className="panel detail-panel"><h2>학생 기본 정보</h2><div className="detail-grid">{[["이름", selected.name], ["성별", selected.gender === "male" ? "남학생" : selected.gender === "female" ? "여학생" : "미지정"], ["생년월일", selected.birth], ["학생 연락처", selected.phone], ["보호자 연락처", selected.guardian], ["학교", selected.school], ["학년·수험 상태", selected.grade], ...(selected.graduatedSchool ? [["졸업 고등학교", selected.graduatedSchool]] : []), ["주소", selected.address], ["등록일", selected.enrolled], ["수강 반", classNames(selected.classes) || "없음"], ["메모", selected.memo]].map(([label, value]) => <div key={label}><span>{label}</span><strong>{value}</strong></div>)}</div></div>{selected.status === "재원" && <div className="detail-note"><CircleAlert size={17} /> 지문 장치 연동 전에는 학생의 좌석 출입 상태가 자동 변경되지 않습니다.</div>}</>}
       {page === "students" && selected && <section className="panel student-tuition-card"><span>월 수강료 합계</span><strong>{formatNumber(selected.monthlyTuition)}원</strong><small>반 {formatNumber(selected.classTuition)}원 + 좌석 {formatNumber(selected.seatTuition)}원 {Number(selected.tuitionAdjustment) >= 0 ? "+" : "−"} 개인 조정 {formatNumber(Math.abs(Number(selected.tuitionAdjustment)))}원</small>{selected.tuitionAdjustmentReason && <small>조정 사유: {selected.tuitionAdjustmentReason}</small>}</section>}
