@@ -32,6 +32,7 @@ export function DashboardCards({ cards }: { cards: Record<CardId, { title: strin
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState("");
   const [ghost, setGhost] = useState<Ghost | null>(null);
+  const [choosingCards, setChoosingCards] = useState(false);
   const gridRef = useRef<HTMLDivElement>(null);
   const gestureRef = useRef<Gesture | null>(null);
   const savingRef = useRef(false);
@@ -156,19 +157,31 @@ export function DashboardCards({ cards }: { cards: Record<CardId, { title: strin
       <span>우측 상단 아이콘을 끌어 이동하고, 우측 하단 모서리를 끌어 크기를 조절하세요. 배치는 내 계정에 자동 저장됩니다.</span>
       {saving && <span role="status">배치 저장 중...</span>}
       {loaded && error && <button type="button" className="button button-outline" onClick={() => void save(layout)} disabled={saving}>다시 저장</button>}
+      <button type="button" className="button button-outline" onClick={() => setChoosingCards((value) => !value)} aria-expanded={choosingCards} disabled={!loaded}>카드 선택</button>
       <button type="button" className="button button-outline" onClick={() => void save(defaultDashboardLayout)} disabled={!loaded || saving}>기본 배치</button>
     </div>
     {error && <p className="error-message" role="alert">{error}</p>}
+    {choosingCards && <fieldset className="dashboard-card-picker" disabled={saving}>
+      <legend>대시보드에 표시할 카드</legend>
+      {layout.map((card) => <label key={card.id}><input type="checkbox" checked={card.visible !== false}
+        onChange={(event) => void save(layout.map((item) => item.id === card.id ? { ...item, visible: event.target.checked } : item))} />{cards[card.id].title}</label>)}
+      <p>숨긴 카드도 선택하면 기존 크기와 순서로 다시 표시됩니다.</p>
+    </fieldset>}
     <div className="dashboard-card-grid" ref={gridRef}>
-      {layout.map((card, index) => <div key={card.id} data-dashboard-card={card.id}
+      {layout.map((card, index) => card.visible === false ? null : <div key={card.id} data-dashboard-card={card.id}
         className={`dashboard-card-wrap${ghost?.id === card.id ? " dashboard-card-dragging" : ""}`}
         style={{ flexBasis: `calc(${card.width}% - ${(1 - card.width / 100) * 18}px)`, height: card.height ?? undefined }}>
         {cards[card.id].content}
         <button type="button" className="dashboard-drag-handle" disabled={!loaded || saving}
           aria-label={`${cards[card.id].title} 이동`} title="드래그하여 이동 (키보드 방향키로 순서 변경)"
           onKeyDown={(event) => {
-            if (event.key === "ArrowLeft" || event.key === "ArrowUp") { event.preventDefault(); move(card.id, index - 1); }
-            if (event.key === "ArrowRight" || event.key === "ArrowDown") { event.preventDefault(); move(card.id, index + 1); }
+            if (["ArrowLeft", "ArrowUp", "ArrowRight", "ArrowDown"].includes(event.key)) {
+              event.preventDefault();
+              const step = event.key === "ArrowLeft" || event.key === "ArrowUp" ? -1 : 1;
+              let target = index + step;
+              while (target >= 0 && target < layout.length && layout[target].visible === false) target += step;
+              move(card.id, target);
+            }
           }}
           onPointerDown={(event) => startGesture(event, card.id, "move")} onPointerMove={updateGesture}
           onPointerUp={finishGesture} onPointerCancel={(event) => finishGesture(event, true)}

@@ -196,6 +196,7 @@ test("academy numbers and one-time codes safely enroll staff", async () => {
     layout.reverse();
     layout[0].width = 45.72;
     layout[0].height = 315;
+    layout[0].visible = false;
     response = await call("/api/dashboard-layout", layout, owner, "192.0.2.1", "PUT");
     assert.equal(response.status, 200);
     response = await call("/api/dashboard-layout", undefined, owner);
