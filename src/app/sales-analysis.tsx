@@ -6,8 +6,8 @@ import { paymentMethodLabels, type PaymentMethod } from "@/lib/payment-method";
 type RecordRow = { id: string; student_name: string; amount: number; paid_at: number; payment_method: PaymentMethod | null; billing_period: string };
 const currency = (value: number) => value.toLocaleString("ko-KR");
 
-export function SalesAnalysis() {
-  const [period, setPeriod] = useState(() => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Seoul", year: "numeric", month: "2-digit" }).format(new Date()));
+export function SalesAnalysis({ initialPeriod }: { initialPeriod?: string }) {
+  const [period, setPeriod] = useState(() => initialPeriod || new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Seoul", year: "numeric", month: "2-digit" }).format(new Date()));
   const [records, setRecords] = useState<RecordRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");

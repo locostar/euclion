@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const dashboardCardIds = ["students", "attendance", "unpaid", "quick", "tasks", "recent"] as const;
+export const dashboardCardIds = ["students", "attendance", "unpaid", "quick", "tasks", "recent", "sales"] as const;
 const cardId = z.enum(dashboardCardIds);
 const dashboardCardSchema = z.union([
   z.object({
@@ -14,12 +14,21 @@ const dashboardCardSchema = z.union([
     height: null,
   })),
 ]);
-export const dashboardLayoutSchema = z.array(dashboardCardSchema)
-  .length(dashboardCardIds.length).refine((cards) => new Set(cards.map((card) => card.id)).size === dashboardCardIds.length);
-
-export type DashboardLayout = z.infer<typeof dashboardLayoutSchema>;
+export type DashboardLayout = z.infer<typeof dashboardCardSchema>[];
 export const defaultDashboardLayout: DashboardLayout = [
   { id: "students", width: 33.33, height: null }, { id: "attendance", width: 33.33, height: null },
   { id: "unpaid", width: 33.33, height: null }, { id: "quick", width: 66.67, height: null },
   { id: "tasks", width: 33.33, height: null }, { id: "recent", width: 66.67, height: null },
+  { id: "sales", width: 33.33, height: null },
 ];
+export const dashboardLayoutSchema = z.array(dashboardCardSchema)
+  .refine((cards) => {
+    const ids = new Set(cards.map((card) => card.id));
+    return ids.size === cards.length && (
+      cards.length === dashboardCardIds.length ||
+      (cards.length === dashboardCardIds.length - 1 && !ids.has("sales"))
+    );
+  })
+  .transform((cards) => cards.some((card) => card.id === "sales")
+    ? cards
+    : [...cards, { id: "sales" as const, width: 33.33, height: null }]);

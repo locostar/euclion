@@ -9,6 +9,18 @@ export async function GET(request: Request) {
   const start = Date.parse(`${period}-01T00:00:00+09:00`);
   const [year, month] = period.split("-").map(Number);
   const end = Date.UTC(year, month, 1) - 9 * 60 * 60 * 1000;
+  if (new URL(request.url).searchParams.get("summary") === "1") {
+    const summary = await result.context.env.DB.prepare(
+      `SELECT payment_method, SUM(amount) AS amount, COUNT(*) AS count
+       FROM tuition_charges
+       WHERE organization_id = ? AND status = 'paid' AND paid_at >= ? AND paid_at < ?
+       GROUP BY payment_method`,
+    ).bind(result.context.organizationId, start, end).all<{
+      payment_method: "card" | "cash" | "pay" | "transfer" | "other" | null;
+      amount: number; count: number;
+    }>();
+    return apiJson({ summary: summary.results });
+  }
   const rows = await result.context.env.DB.prepare(
     `SELECT tc.id, s.name AS student_name, tc.amount, tc.paid_at, tc.payment_method, tc.billing_period
      FROM tuition_charges tc JOIN students s

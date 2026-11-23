@@ -164,15 +164,21 @@ test("academy numbers and one-time codes safely enroll staff", async () => {
     const sales = await response.json();
     assert.equal(sales.records.length, 1);
     assert.equal(sales.records[0].payment_method, "card");
+    response = await call("/api/sales?period=2026-03&summary=1", undefined, owner);
+    assert.deepEqual((await response.json()).summary, [{ payment_method: "card", amount: 100000, count: 1 }]);
     const outsider = await signup("outsider@example.test", "192.0.2.5");
     response = await call("/api/academy", { name: "Other Academy" }, outsider, "192.0.2.5");
     assert.equal(response.status, 201);
     response = await call("/api/sales?period=2026-03", undefined, outsider, "192.0.2.5");
     assert.equal((await response.json()).records.length, 0);
+    response = await call("/api/sales?period=2026-03&summary=1", undefined, outsider, "192.0.2.5");
+    assert.deepEqual((await response.json()).summary, []);
     response = await call("/api/billing", { chargeId: "charge", status: "unpaid" }, outsider, "192.0.2.5", "PATCH");
     assert.equal(response.status, 404);
     response = await call("/api/sales?period=2026-02", undefined, owner);
     assert.equal((await response.json()).records.length, 0);
+    response = await call("/api/sales?period=2026-02&summary=1", undefined, owner);
+    assert.deepEqual((await response.json()).summary, []);
     response = await call("/api/billing", { chargeId: "charge", status: "unpaid" }, owner, "192.0.2.1", "PATCH");
     assert.equal(response.status, 200);
     const unpaid = await db.prepare("SELECT paid_at, payment_method FROM tuition_charges WHERE id = 'charge'").first();
@@ -183,6 +189,8 @@ test("academy numbers and one-time codes safely enroll staff", async () => {
     await db.prepare("UPDATE tuition_charges SET status = 'paid', paid_at = ?, payment_method = NULL WHERE id = 'charge'").bind(Date.parse("2026-02-28T15:00:00Z")).run();
     response = await call("/api/sales?period=2026-03", undefined, owner);
     assert.equal((await response.json()).records[0].payment_method, null);
+    response = await call("/api/sales?period=2026-03&summary=1", undefined, owner);
+    assert.deepEqual((await response.json()).summary, [{ payment_method: null, amount: 100000, count: 1 }]);
     response = await call("/api/dashboard-layout", undefined, owner);
     const layout = (await response.json()).layout;
     layout.reverse();
@@ -200,6 +208,11 @@ test("academy numbers and one-time codes safely enroll staff", async () => {
     await db.prepare("UPDATE dashboard_layout SET layout = ?").bind(JSON.stringify(legacyLayout)).run();
     response = await call("/api/dashboard-layout", undefined, owner);
     assert.deepEqual((await response.json()).layout, layout.map((card) => ({ id: card.id, width: 66.67, height: null })));
+    const oldLayout = legacyLayout.filter((card) => card.id !== "sales");
+    await db.prepare("UPDATE dashboard_layout SET layout = ? WHERE organization_id = ? AND user_id = (SELECT user_id FROM member WHERE organization_id = ? AND role = 'owner' LIMIT 1)")
+      .bind(JSON.stringify(oldLayout), organization.id, organization.id).run();
+    response = await call("/api/dashboard-layout", undefined, owner);
+    assert.deepEqual((await response.json()).layout, [...oldLayout.map((card) => ({ id: card.id, width: 66.67, height: null })), { id: "sales", width: 33.33, height: null }]);
     response = await call("/api/dashboard-layout", legacyLayout, owner, "192.0.2.1", "PUT");
     assert.equal(response.status, 200);
     response = await call("/api/dashboard-layout", undefined, owner);

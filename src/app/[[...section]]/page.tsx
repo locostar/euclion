@@ -13,6 +13,7 @@ import { authClient } from "@/lib/auth-client";
 import { DEFAULT_GUARDIAN_REMINDER } from "@/lib/guardian-reminder";
 import { StaffManagement } from "../staff-management";
 import { DashboardCards } from "../dashboard-cards";
+import { DashboardSales } from "../dashboard-sales";
 import { SalesAnalysis } from "../sales-analysis";
 import { paymentMethodLabels, type PaymentMethod } from "@/lib/payment-method";
 
@@ -354,6 +355,7 @@ function Dashboard({ academy, user }: {
   const [dataError, setDataError] = useState("");
   const [savingAttendance, setSavingAttendance] = useState(false);
   const [billingPeriod, setBillingPeriod] = useState("");
+  const [salesPeriod, setSalesPeriod] = useState("");
   const [billingCharges, setBillingCharges] = useState<BillingCharge[]>([]);
   const [billingFormOpen, setBillingFormOpen] = useState(false);
   const [billingForm, setBillingForm] = useState({
@@ -664,7 +666,8 @@ function Dashboard({ academy, user }: {
     });
   }, [routeEditingClass, classEditing]);
 
-  const go = (next: Page) => {
+  const go = (next: Page, salesMonth = "") => {
+    if (next === "sales") setSalesPeriod(salesMonth);
     if (next === "class-new") {
       setClassForm(emptyClass());
       setClassEditing(null);
@@ -1295,9 +1298,10 @@ function Dashboard({ academy, user }: {
               </div>}
           </section> },
           recent: { title: "학생 현황", content: <section className="panel recent-panel"><div className="panel-heading"><div><h2>학생 현황</h2><p>등록된 학생 목록을 확인해 보세요.</p></div><button className="text-link" onClick={() => go("students")}>전체 보기 <ArrowRight size={15} /></button></div><StudentTable students={activeStudents.slice(0, 4)} classNames={classNames} select={showStudent} /></section> },
+          sales: { title: "월별 수납 현황", content: <DashboardSales currentPeriod={currentDate.slice(0, 7)} openSales={(period) => go("sales", period)} /> },
         }} />
       </>}
-      {page === "sales" && <SalesAnalysis />}
+      {page === "sales" && <SalesAnalysis initialPeriod={salesPeriod} />}
 
       {page === "students" && selected && <><button className="back-link" onClick={() => go("students")}><ArrowLeft size={16} /> 학생 목록으로</button><PageHeading eyebrow="STUDENT MANAGEMENT" title={selected.name} description={`${selected.status} · 등록일 ${dateLabel(selected.enrolled)}`} action={<div className="student-detail-actions"><Button variant="outline" onClick={() => editStudent(selected)}>정보 수정</Button>{selected.status === "재원" ? <Button variant="outline" onClick={() => void updateStudentStatus(selected, "withdrawn")}>퇴원 처리</Button> : <Button onClick={() => void updateStudentStatus(selected, "active")}>재원 복귀</Button>}</div>} />{message && <div className="success-message">{message}</div>}{error && <p className="error-message" role="alert">{error}</p>}<div className="panel detail-panel"><h2>학생 기본 정보</h2><div className="detail-grid">{[["이름", selected.name], ["성별", selected.gender === "male" ? "남학생" : selected.gender === "female" ? "여학생" : "미지정"], ["생년월일", selected.birth], ["학생 연락처", selected.phone], ["보호자 연락처", selected.guardian], ["학교", selected.school], ["학년·수험 상태", selected.grade], ...(selected.graduatedSchool ? [["졸업 고등학교", selected.graduatedSchool]] : []), ["주소", selected.address], ["등록일", selected.enrolled], ["수강 반", classNames(selected.classes) || "없음"], ["메모", selected.memo]].map(([label, value]) => <div key={label}><span>{label}</span><strong>{value}</strong></div>)}</div></div>{selected.status === "재원" && <div className="detail-note"><CircleAlert size={17} /> 지문 장치 연동 전에는 학생의 좌석 출입 상태가 자동 변경되지 않습니다.</div>}</>}
       {page === "students" && selected && <section className="panel student-tuition-card"><span>월 수강료 합계</span><strong>{formatNumber(selected.monthlyTuition)}원</strong><small>반 {formatNumber(selected.classTuition)}원 + 좌석 {formatNumber(selected.seatTuition)}원 {Number(selected.tuitionAdjustment) >= 0 ? "+" : "−"} 개인 조정 {formatNumber(Math.abs(Number(selected.tuitionAdjustment)))}원</small>{selected.tuitionAdjustmentReason && <small>조정 사유: {selected.tuitionAdjustmentReason}</small>}</section>}

@@ -396,6 +396,17 @@ tr:hover .billing-reminder-button, tr:focus-within .billing-reminder-button { op
 .dashboard-drag-handle:hover, .dashboard-resize-handle:hover { background: #e7f0eb; border-color: #9dbbac; }
 .dashboard-drag-handle:disabled, .dashboard-resize-handle:disabled { opacity: .45; cursor: default; }
 .dashboard-drag-handle:focus-visible, .dashboard-resize-handle:focus-visible { outline: 2px solid #285d5d; outline-offset: 2px; }
+.dashboard-sales .panel-heading { margin-bottom: 16px; }
+.dashboard-sales-period { max-width: 180px; margin-bottom: 14px; }
+.dashboard-sales-total { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px; padding: 14px; border-radius: 9px; background: #e7f0eb; color: #285d5d; }
+.dashboard-sales-total span { font-size: 12px; }
+.dashboard-sales-total strong { font-size: 19px; overflow-wrap: anywhere; }
+.dashboard-sales-list { list-style: none; padding: 0; margin: 12px 0; }
+.dashboard-sales-list li { display: flex; justify-content: space-between; gap: 12px; padding: 9px 0; border-bottom: 1px solid #edf1ed; font-size: 12px; }
+.dashboard-sales-list li span { color: #617267; }
+.dashboard-sales-link { margin-top: 6px; }
+.dashboard-sales-note { margin-top: 12px; color: #65796e; font-size: 11px; line-height: 1.5; }
+.dashboard-sales-error { color: #9c3935; font-size: 12px; }
 .sales-panel { margin-bottom: 35px; }
 .sales-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(145px, 1fr)); gap: 10px; margin-bottom: 28px; }
 .sales-summary-card { display: grid; gap: 9px; padding: 15px; border: 1px solid #e8eee8; border-radius: 9px; background: #f7faf7; }
