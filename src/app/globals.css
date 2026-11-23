@@ -380,17 +380,19 @@ tr:hover .billing-reminder-button, tr:focus-within .billing-reminder-button { op
 }
 .dashboard-layout-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 0 0 16px; }
 .dashboard-layout-toolbar > span { flex: 1 1 220px; color: #536f68; font-size: 12px; line-height: 1.5; }
-.dashboard-card-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; margin-bottom: 30px; }
-.dashboard-card-wrap { position: relative; min-width: 0; }
-.dashboard-card-large { grid-column: span 2; }
-.dashboard-card-wrap > .panel, .dashboard-card-wrap > .stat-card { width: 100%; height: 100%; margin: 0; }
-.dashboard-card-dragging { opacity: .5; }
+.dashboard-card-grid { --dashboard-gap: 18px; display: flex; flex-wrap: wrap; gap: var(--dashboard-gap); align-items: stretch; margin-bottom: 30px; }
+.dashboard-card-wrap { position: relative; flex: 0 1 240px; min-width: min(240px, 100%); max-width: 100%; }
+.dashboard-card-wrap > .panel, .dashboard-card-wrap > .stat-card { width: 100%; height: 100%; margin: 0; overflow: auto; }
+.workspace-dashboard .dashboard-card-wrap > .stat-card { min-height: 0; }
+.dashboard-card-dragging { opacity: .3; }
+.dashboard-card-ghost { position: fixed; z-index: 100; pointer-events: none; opacity: .72; filter: drop-shadow(0 10px 15px #193e4033); }
+.dashboard-card-ghost > .dashboard-card-wrap { width: 100%; height: 100%; }
 .dashboard-card-wrap > .stat-card, .dashboard-card-wrap > .panel { padding-bottom: 48px; }
 .dashboard-card-wrap .stat-top, .dashboard-card-wrap .panel-heading { padding-right: 42px; }
 .dashboard-drag-handle, .dashboard-resize-handle { position: absolute; z-index: 1; display: grid; place-items: center; width: 36px; height: 36px; padding: 0; border: 1px solid #d5e0d8; border-radius: 9px; background: #f7faf7; color: #345f58; }
 .dashboard-drag-handle { top: 12px; right: 12px; cursor: grab; touch-action: none; user-select: none; }
 .dashboard-drag-handle:active { cursor: grabbing; }
-.dashboard-resize-handle { right: 10px; bottom: 10px; cursor: pointer; }
+.dashboard-resize-handle { right: 10px; bottom: 10px; cursor: nwse-resize; touch-action: none; user-select: none; }
 .dashboard-drag-handle:hover, .dashboard-resize-handle:hover { background: #e7f0eb; border-color: #9dbbac; }
 .dashboard-drag-handle:disabled, .dashboard-resize-handle:disabled { opacity: .45; cursor: default; }
 .dashboard-drag-handle:focus-visible, .dashboard-resize-handle:focus-visible { outline: 2px solid #285d5d; outline-offset: 2px; }
@@ -399,10 +401,3 @@ tr:hover .billing-reminder-button, tr:focus-within .billing-reminder-button { op
 .sales-summary-card { display: grid; gap: 9px; padding: 15px; border: 1px solid #e8eee8; border-radius: 9px; background: #f7faf7; }
 .sales-summary-card span { color: #617267; font-size: 12px; }
 .sales-summary-card strong { overflow-wrap: anywhere; font-size: 18px; }
-@media (max-width: 780px) {
-  .dashboard-card-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
-}
-@media (max-width: 520px) {
-  .dashboard-card-grid { grid-template-columns: minmax(0, 1fr); }
-  .dashboard-card-large { grid-column: auto; }
-}

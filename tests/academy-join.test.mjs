@@ -186,7 +186,8 @@ test("academy numbers and one-time codes safely enroll staff", async () => {
     response = await call("/api/dashboard-layout", undefined, owner);
     const layout = (await response.json()).layout;
     layout.reverse();
-    layout[0].size = "large";
+    layout[0].width = 45.72;
+    layout[0].height = 315;
     response = await call("/api/dashboard-layout", layout, owner, "192.0.2.1", "PUT");
     assert.equal(response.status, 200);
     response = await call("/api/dashboard-layout", undefined, owner);
@@ -194,6 +195,18 @@ test("academy numbers and one-time codes safely enroll staff", async () => {
     response = await call("/api/dashboard-layout", undefined, winner, "192.0.2.2");
     assert.notDeepEqual((await response.json()).layout, layout);
     response = await call("/api/dashboard-layout", [layout[0]], owner, "192.0.2.1", "PUT");
+    assert.equal(response.status, 400);
+    const legacyLayout = layout.map((card) => ({ id: card.id, size: "large" }));
+    await db.prepare("UPDATE dashboard_layout SET layout = ?").bind(JSON.stringify(legacyLayout)).run();
+    response = await call("/api/dashboard-layout", undefined, owner);
+    assert.deepEqual((await response.json()).layout, layout.map((card) => ({ id: card.id, width: 66.67, height: null })));
+    response = await call("/api/dashboard-layout", legacyLayout, owner, "192.0.2.1", "PUT");
+    assert.equal(response.status, 200);
+    response = await call("/api/dashboard-layout", undefined, owner);
+    assert.deepEqual((await response.json()).layout, layout.map((card) => ({ id: card.id, width: 66.67, height: null })));
+    response = await call("/api/dashboard-layout", layout.map((card, index) => index ? card : { ...card, width: 101 }), owner, "192.0.2.1", "PUT");
+    assert.equal(response.status, 400);
+    response = await call("/api/dashboard-layout", layout.map((card, index) => index ? card : { ...card, height: 159 }), owner, "192.0.2.1", "PUT");
     assert.equal(response.status, 400);
   } finally {
     await mf.dispose();
